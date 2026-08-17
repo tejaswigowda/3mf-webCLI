@@ -1,0 +1,31 @@
+{
+  "name": "3mf-webCLI",
+  "version": "0.1.0",
+  "description": "A client-side, offline GLB-to-3MF color-segmentation tool for multi-material 3D printing.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "npx serve docs"
+  },
+  "keywords": [
+    "3D",
+    "3MF",
+    "GLB",
+    "gltf",
+    "color-segmentation",
+    "material-assignment",
+    "offline",
+    "pwa",
+    "client-side",
+    "no-server",
+    "3D-printing",
+    "webCLI"
+  ],
+  "author": "Foxy Ninja Studios",
+  "license": "GPL-3.0",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

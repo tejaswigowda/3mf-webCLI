@@ -28,7 +28,7 @@ Leave **Auto-detect material count** checked (default) and the app picks the nat
 
 ### 4. Segment
 
-Click **⚡ Cluster & Segment** to run the pythia-style pipeline (chroma-weighted Lab k-means + edge-aware smoothing + MRF refinement).
+Click **⚡ Cluster & Segment** to run the segmentation pipeline (chroma-weighted Lab k-means + edge-aware smoothing + MRF refinement).
 
 The material palette appears with a hex color and face count per cluster, and the 3D viewer switches to the segmented preview.
 
@@ -70,7 +70,7 @@ cd 3mf-webCLI
 # Install (optional; only needed if you add npm dependencies)
 npm install
 
-# Dev server (serves docs/ with COOP/COEP headers)
+# Dev server (serves docs/ locally)
 node server.js
 
 # Open http://127.0.0.1:8008
@@ -91,7 +91,7 @@ docs/                          # Static PWA assets (served by GitHub Pages)
 ├── viewer.js                  # three.js viewer + segmented GLB export
 └── download-handler.js        # Client-side download
 
-server.js                       # Node.js dev server (COOP/COEP headers)
+server.js                       # Node.js dev server (optional COOP/COEP)
 package.json                    # Metadata + scripts
 LICENSE                         # GPL-3.0
 .gitignore                      # Git ignore rules
@@ -135,7 +135,7 @@ Live at: https://tejaswigowda.com/3mf-webCLI/ (usually within 1–2 minutes)
 
 No automated tests yet (TODO). Manual testing:
 
-1. **Vertex color GLB** — From Pythia or hand-painted vertex color
+1. **Vertex color GLB** — Hand-painted vertex color or an engine/reconstruction export
 2. **Textured GLB** — From a 3D generation tool with baked textures (texture is decoded in-browser and sampled per face)
 3. **Material color GLB** — From Blender untextured export
 4. **Monochrome GLB** — Plain single-color mesh (degrades to one material)
@@ -154,7 +154,7 @@ For each:
 
 - Ensure the file is a valid `.glb` (binary glTF)
 - Check file size > 0 bytes
-- Try downloading a test GLB from https://github.com/FoxyNinjaStudios/pythia/tree/main/samples
+- Try any `.glb` exported from Blender, Meshy, Tripo, or Sketchfab
 
 ### Material colors don't match input
 

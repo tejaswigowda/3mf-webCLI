@@ -201,7 +201,7 @@ class App {
 
     $('segmentBtn').disabled = true;
     setStatus(`Segmenting ${faces.length.toLocaleString()} faces into ${k} materials…`, 'loading');
-    addLog(`Pythia-style segmentation (k=${k}): chroma-weighted Lab k-means ×3 restarts + edge-aware smoothing + MRF refinement…`);
+    addLog(`Segmentation (k=${k}): chroma-weighted Lab k-means ×3 restarts + edge-aware smoothing + MRF refinement…`);
     setProgress(true, 'Clustering & refining…', 15);
     await nextFrame();
 

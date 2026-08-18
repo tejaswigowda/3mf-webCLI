@@ -8,7 +8,7 @@
  * - Enable offline mode for previously cached content
  */
 
-const CACHE_NAME = '3mf-webCLI-v13';
+const CACHE_NAME = '3mf-webCLI-v14';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -17,7 +17,6 @@ const ASSETS_TO_CACHE = [
   './glb-parser.js',
   './color-clusterer.js',
   './3mf-authorer.js',
-  './material-assigner.js',
   './download-handler.js',
   './manifest.json',
   // CDN dependencies (cached for offline use)

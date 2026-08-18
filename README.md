@@ -15,7 +15,7 @@ A browser-based GLB-to-3MF converter with **color-based material segmentation** 
 
 ✓ **No Server Uploads** : All 3D processing happens entirely on your device
 
-✓ **Works on Any GLB** : Designed for any source - Blender, Meshy, Tripo, Sketchfab, or anywhere. Not tied to Pythia.
+✓ **Works on Any GLB** : Designed for any source - Blender, Meshy, Tripo, Sketchfab, photogrammetry, or anywhere
 
 ✓ **Four Color Inputs** : Detects and segments whatever the GLB carries:
   - Per-vertex color (`COLOR_0`, VEC3/VEC4, all glTF component types incl. normalized integers)
@@ -23,13 +23,13 @@ A browser-based GLB-to-3MF converter with **color-based material segmentation** 
   - Material base-color factors (untextured, per-primitive colors)
   - Monochrome (graceful degrade to a single material)
 
-✓ **Pythia-Style Segmentation** : A JavaScript port of [Pythia](https://github.com/FoxyNinjaStudios/pythia)'s part-segmentation pipeline - chroma-weighted Lab k-means with multi-restart, edge-aware label smoothing, MRF refinement, and small-region cleanup (see [Segmentation Pipeline](#segmentation-pipeline))
+✓ **Perceptual Color Segmentation** : chroma-weighted Lab k-means with multi-restart, edge-aware label smoothing, MRF refinement, and small-region cleanup (see [Segmentation Pipeline](#segmentation-pipeline))
 
 ✓ **Interactive 3D Viewer** : three.js preview of the original and segmented model - click a segment (or its swatch) to highlight it in isolation
 
 ✓ **Cluster Merging** : Combine any two materials after segmentation with two clicks - no need to re-run
 
-✓ **Auto Material Detection** : Finds the natural number of materials straight from the model's colors (no ML - a pythia-style inertia-elbow heuristic). On by default; toggle off for a fixed count
+✓ **Auto Material Detection** : Finds the natural number of materials straight from the model's colors (no ML - a simple inertia-elbow heuristic). On by default; toggle off for a fixed count
 
 ✓ **User-Selectable Material Count** : Or cluster down to a fixed 2-8 materials to match your printer's slot count (e.g., 4 for Bambu AMS, MMU for Prusa)
 
@@ -66,7 +66,7 @@ Your file never leaves your device.
 
 Drag & drop or select a `.glb` (binary glTF 2.0) file. The app parses every mesh and primitive, then detects which color representation the model carries:
 
-- **Per-vertex color** (`COLOR_0`) - e.g., Pythia's default export, hand-painted vertex color
+- **Per-vertex color** (`COLOR_0`) - hand-painted vertex color or engine/reconstruction export
 - **Textured** (`baseColorTexture` + UVs) - most DCC / photogrammetry / AI-reconstruction output. The embedded texture is decoded in-browser and sampled at each face's UV centroid.
 - **Material-based** (untextured per-primitive `baseColorFactor`)
 
@@ -80,7 +80,7 @@ Leave **Auto-detect material count** checked (default) to let the app pick the n
 
 ### Step 3: Segment
 
-Click **Cluster & Segment**. The app runs the [pythia-style pipeline](#segmentation-pipeline): perceptual clustering plus spatial regularization over the face-adjacency graph. Clusters that end up too small or too similar are merged automatically, so the final count can be lower than N.
+Click **Cluster & Segment**. The app runs the [segmentation pipeline](#segmentation-pipeline): perceptual clustering plus spatial regularization over the face-adjacency graph. Clusters that end up too small or too similar are merged automatically, so the final count can be lower than N.
 
 ### Step 4: Inspect & Refine
 
@@ -162,7 +162,7 @@ The parser handles all glTF component types, interleaved/strided buffer views, n
 
 ### Segmentation Pipeline
 
-A JavaScript port of [Pythia](https://github.com/FoxyNinjaStudios/pythia)'s `part_segmentation.py`. Plain k-means on face colors falls apart on real-world models - baked lighting splits one part into light/dark bands and photographic noise produces speckle. The pipeline counters both:
+An independent implementation of a perceptual color-segmentation pipeline. Plain k-means on face colors falls apart on real-world models - baked lighting splits one part into light/dark bands and photographic noise produces speckle. The pipeline counters both:
 
 1. **Chroma-weighted Lab** - colors are converted to Lab and the lightness channel is scaled by **0.35**, so hue drives the clustering and baked shading doesn't create brightness bands.
 2. **k-means++ × 3 restarts** - three seeded runs; the one with the lowest inertia wins. Deterministic: same input + same N ⇒ same output.
@@ -175,7 +175,7 @@ Face adjacency is built by welding vertices at quantized positions, so meshes wi
 
 #### Auto Material Detection
 
-When **Auto-detect material count** is on, the app first estimates the natural palette size before running the pipeline above - no ML, just a pythia-style **inertia elbow** heuristic:
+When **Auto-detect material count** is on, the app first estimates the natural palette size before running the pipeline above - no ML, just a simple **inertia elbow** heuristic:
 
 1. Sample up to 4,000 face colors (for speed) and run chroma-weighted Lab k-means for **k = 1..8**, recording each run's inertia (within-cluster sum of squares).
 2. If k = 1 already explains the colors (total drop < 15 %), the model is treated as effectively single-color and clamps to the 2-material minimum.
@@ -200,7 +200,7 @@ Output is a ZIP file containing:
 └── [Content_Types].xml             # Content type declarations
 ```
 
-**Material Assignment:** Pythia-style multi-mesh approach: one `<object>` per material, each with `pid="1"` and unique `pindex` (0..N-1). All material objects are assembled as `<components>` of a root object (highest id), which is referenced in the `<build>` section. The model tag declares the production namespace (`xmlns:p`) and every object/component/build item carries a `p:UUID`. This structure is **natively supported** by modern slicers (Bambu Studio, PrusaSlicer) without per-triangle ambiguity.
+**Material Assignment:** multi-mesh approach: one `<object>` per material, each with `pid="1"` and unique `pindex` (0..N-1). All material objects are assembled as `<components>` of a root object (highest id), which is referenced in the `<build>` section. The model tag declares the production namespace (`xmlns:p`) and every object/component/build item carries a `p:UUID`. This structure is **natively supported** by modern slicers (Bambu Studio, PrusaSlicer) without per-triangle ambiguity.
 
 **Filament mapping:** `Metadata/model_settings.config` lists each material mesh as a `part` bound to a distinct `extruder` (1..N). Without this file Bambu Studio treats the whole assembly as a single filament — it is what makes each color land in its own AMS slot on import.
 
@@ -225,7 +225,7 @@ docs/
 ├── index.html          UI (inline styles, ffmpeg-webCLI design language)
 ├── app.js              Controller - orchestrates the pipeline, swatches, merging
 ├── glb-parser.js       GLB/glTF parsing + color extraction + texture sampling
-├── color-clusterer.js  Pythia-style segmentation pipeline
+├── color-clusterer.js  Perceptual color segmentation pipeline
 ├── 3mf-authorer.js     3MF ZIP/XML authoring with per-face material assignment
 ├── viewer.js           three.js viewer - preview, segment picking, GLB export
 ├── download-handler.js Client-side blob download
@@ -236,7 +236,7 @@ docs/
 
 **`color-clusterer.js`** - `segmentFaces()`: chroma-weighted Lab k-means (×3 restarts) + face-adjacency smoothing + MRF refinement + small-region cleanup. `autoDetectK()`: inertia-elbow auto material count. Seeded and deterministic
 
-**`3mf-authorer.js`** - Authors a valid 3MF ZIP/XML (pythia-style): one mesh per material, each as a separate object with `pid="1"` and unique `pindex`, all assembled as components of a root object
+**`3mf-authorer.js`** - Authors a valid 3MF ZIP/XML: one mesh per material, each as a separate object with `pid="1"` and unique `pindex`, all assembled as components of a root object
 
 **`viewer.js`** - three.js scene: original + segmented previews, raycast segment picking, binary GLB export via `GLTFExporter`
 
@@ -264,7 +264,7 @@ Pure browser APIs + ES modules. No npm packages, no bundler. three.js is loaded 
 
 1. **Texture sampling is per-face** (UV centroid). Faces spanning multiple texture colors get one representative sample; densely tessellated models are unaffected.
 
-2. **No boundary re-tessellation.** Material boundaries follow existing face edges; faces are never split. This preserves watertightness at the cost of boundary precision on coarse meshes.
+2. **No boundary re-tessellation.** Material boundaries follow existing face edges; faces are never split. This preserves watertightness at the cost of boundary precision on coarse meshes. Single-material output is geometry-clean; multi-material output follows existing faces and does not add speckle at cluster boundaries (small stray regions are dissolved by the small-region cleanup pass, which runs before both the 3MF and GLB exports).
 
 3. **Reconstruction artifacts:** If the input GLB has roughness (spikes, thin features), those stay visible after segmentation. This is by design - the tool surfaces input quality; it does not repair mesh.
 
@@ -274,7 +274,7 @@ Pure browser APIs + ES modules. No npm packages, no bundler. three.js is loaded 
 
 ### Next
 
-- [x] Auto material count (inertia-elbow detection, pythia-style - no ML)
+- [x] Auto material count (inertia-elbow detection - no ML)
 - [ ] Material color picker & manual reassignment brush
 - [ ] Optional boundary re-tessellation for crisper color edges
 - [ ] Mesh repair hints
@@ -294,13 +294,15 @@ Pure browser APIs + ES modules. No npm packages, no bundler. three.js is loaded 
 git clone https://github.com/tejaswigowda/3mf-webCLI.git
 cd 3mf-webCLI
 
-# Start the development server (sets COOP/COEP headers automatically)
+# Start the development server
 node server.js
 
 # Open http://127.0.0.1:8008 in your browser
 ```
 
-The server sets `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, which are required for `SharedArrayBuffer` (used by future Web Worker features).
+The app itself needs no special HTTP headers. The bundled dev server also sets
+`Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy`, but these are optional
+and not required for any current feature.
 
 ### Deployment
 
@@ -310,12 +312,7 @@ Deploy the `docs/` folder to any static host:
 - **Vercel / Netlify / Cloudflare Pages** - Drag & drop the `docs/` folder
 - **Traditional web server** - Copy `docs/` to the web root
 
-**Important:** The host must send these headers:
-
-```http
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
+No special HTTP headers are required - the app runs from any plain static host.
 
 ---
 
@@ -332,11 +329,6 @@ Cross-Origin-Embedder-Policy: require-corp
 - Service worker caches static assets for offline use
 - No user data is transmitted or stored server-side
 - No persistent local storage (files don't survive a browser clear)
-
-**Cross-origin isolation:**
-
-- The server (or host) sets COOP/COEP headers
-- This enables `SharedArrayBuffer` for multi-threaded inference (future)
 
 ---
 
@@ -372,14 +364,13 @@ See [LICENSE](LICENSE) for full details.
 
 - [**ffmpeg-webCLI**](https://github.com/tejaswigowda/ffmpeg-webCLI) - Browser-based video editor. Video processing pipeline for the webCLI family.
 - [**whisper-webCLI**](https://github.com/tejaswigowda/whisper-webCLI) - Browser-based speech-to-text transcriber. Audio processing pipeline for the webCLI family.
-- [**Pythia**](https://github.com/FoxyNinjaStudios/pythia) - 3D reconstruction + color segmentation + 3MF export. Origin of the multi-color segmentation technique; reference implementation.
 - [**strata-editor**](https://github.com/tejaswigowda/strata-editor) - Browser-based 3D scene editor with deterministic selector language. Future basis for advanced mesh editing in 3mf-webCLI.
 
 ---
 
 ## Acknowledgments
 
-- **Technique origin:** [Pythia](https://github.com/FoxyNinjaStudios/pythia) pioneered color-based segmentation and multi-material 3MF export. The segmentation pipeline here is a direct JavaScript port of pythia's `part_segmentation.py` (chroma-weighted Lab clustering + edge-aware smoothing + MRF refinement).
+- **Segmentation:** an independent implementation of a chroma-weighted Lab clustering + edge-aware smoothing + MRF refinement pipeline.
 - **Design inspiration:** [ffmpeg-webCLI](https://github.com/tejaswigowda/ffmpeg-webCLI) and [whisper-webCLI](https://github.com/tejaswigowda/whisper-webCLI) - the coherent webCLI line's pattern and ethos.
 - **3MF Spec:** https://3mf.io/specification/
 - **Feedback & testing:** Community contributions and slicer validation (Bambu Studio, PrusaSlicer).

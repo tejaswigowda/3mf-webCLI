@@ -23,8 +23,8 @@
     "3D-printing",
     "webCLI"
   ],
-  "author": "Foxy Ninja Studios",
-  "license": "GPL-3.0",
+  "author": "Tejaswi Gowda",
+  "license": "GPL-3.0-only",
   "engines": {
     "node": ">=14.0.0"
   }

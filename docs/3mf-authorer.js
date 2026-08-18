@@ -9,7 +9,7 @@ class ThreeMFAuthorer {
   /**
    * Create a 3MF file from geometry and material assignments.
    * Approach: one mesh per material, each as a separate object,
-   * assembled via components (pythia-style, slicer-compatible).
+   * assembled via components (slicer-compatible).
    * @param {Array} faces - Face data with indices
    * @param {Array} positions - Vertex positions (flat array)
    * @param {Array<Array<number>>} materialColors - RGB colors for each material
@@ -102,7 +102,7 @@ class ThreeMFAuthorer {
   }
 
   /**
-   * Create 3D model XML with one mesh per material (pythia-style).
+   * Create 3D model XML with one mesh per material.
    * One object per material, all referenced as components of a root object.
    * This approach is slicer-native (Bambu Studio, PrusaSlicer both handle it correctly).
    * @private

@@ -55,20 +55,15 @@
 - [x] **PWA**
   - Service worker for offline caching
   - `manifest.json` with icons, shortcuts, share_target
-  - COOP/COEP headers via `server.js`
+  - No special HTTP headers required (the dev server sets COOP/COEP, but they are optional)
 
-### Testing Needed
+### Testing Status
 
-- **Bambu Studio import:**
-  - ✓ GLB from Pythia (vertex color) → 3MF → Bambu Studio
-  - ✓ Material colors appear in object tree
-  - ✓ Per-face assignments preserved
-  - ✓ Mesh remains watertight
-  
-- **PrusaSlicer import:**
-  - ✓ Same GLB → 3MF → PrusaSlicer
-  - ✓ Material assignments persist
-  - ✓ No faces lost or duplicated
+- **Structure verified:** generated 3MF conforms to the multi-mesh layout + Bambu `model_settings.config` conventions (checked against a known-good reference and a synthetic 4-triangle, 4-color file).
+- **Pending — slicer import validation:** confirm on a real reconstructed mesh (vertex-colored and textured) that Bambu Studio / PrusaSlicer place each material on its own filament slot and geometry stays watertight. The synthetic file is a structural smoke test, not proof on production geometry.
+  - [ ] Vertex-colored real mesh → 3MF → Bambu Studio / PrusaSlicer
+  - [ ] Textured real mesh → 3MF → slicer
+  - [ ] Watertightness + per-material assignment preserved on a high-face-count model
 
 - **Edge cases:**
   - ✓ Monochrome GLB (single color)
@@ -97,9 +92,8 @@
   - Priority: textured > vertex > material > monochrome
   - Reports the detected mode accurately
 
-- [ ] **Testing**
-  - Pythia baked-texture export
-  - Blender baked mesh
+- [ ] **Testing** (pending on real assets)
+  - A baked-texture export (e.g., Blender or photogrammetry)
   - High-res textures (2K, 4K)
   - Missing texture gracefully falls back
 
@@ -271,9 +265,10 @@ test('end-to-end: load GLB → cluster → download 3MF', async () => {
 
 ### Why GPL-3.0?
 
-- **Consistent** with ffmpeg-webCLI and whisper-webCLI
+- **Consistent** with the webCLI family (ffmpeg-webCLI, whisper-webCLI)
 - **Copyleft** — derivative works must also be open
-- **Compatible** with LGPL (ffmpeg.wasm), MIT (three.js), etc.
+- **Compatible** with MIT (three.js) and other permissive deps this tool uses
+- This is an independent, from-scratch implementation — no third-party copyleft code is incorporated, so the license is a free choice
 
 ---
 
@@ -318,14 +313,6 @@ Use Web Workers if clustering becomes a bottleneck.
 - **Material labeling** via strata's selector language
 - **Reuse three.js viewer** from strata (not isolated yet)
 
-### Pythia Integration
-
-Pythia is the origin of the segmentation technique. Future paths:
-
-- **Pythia export→3mf-webCLI import** — test suite
-- **Shared clustering logic** — maybe extract into standalone npm package
-- **Documentation** — link both projects
-
 ### Mesh-webCLI (Future Sibling)
 
 Clean/repair mesh artifacts before segmentation:
@@ -343,7 +330,6 @@ GLB → mesh-webCLI (repair spikes, thin features) → 3mf-webCLI (segment) → 
 - **Lab Color Space:** https://en.wikipedia.org/wiki/CIELAB_color_space
 - **k-means:** https://en.wikipedia.org/wiki/K-means_clustering
 - **Three.js:** https://threejs.org/ (powers the 3D viewer + segmented GLB export; loaded from CDN)
-- **Pythia (Reference):** https://github.com/FoxyNinjaStudios/pythia
 
 ---
 

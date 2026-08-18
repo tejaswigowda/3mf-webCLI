@@ -106,7 +106,7 @@ class ColorClusterer {
 
   /**
    * Auto-detect the natural number of materials from a model's colors
-   * (no ML — pythia-style elbow heuristic). Runs chroma-weighted Lab k-means
+   * (no ML — a simple inertia elbow heuristic). Runs chroma-weighted Lab k-means
    * for k = 1..maxK, then picks the "elbow" of the inertia curve (the point of
    * maximum perpendicular distance from the line joining the first and last
    * points). Distinct near-flat palettes resolve to few materials; rich models
@@ -328,7 +328,7 @@ class ColorClusterer {
    * @private
    */
   static _mrfRefineLabels(labels, nLabels, adjacency, faceLab, { lam, edgeSigma, edgeFloor, iters }) {
-    // Part mean colors from initial labels (computed once, like pythia)
+    // Part mean colors from initial labels (computed once)
     const sums = Array.from({ length: nLabels }, () => [0, 0, 0]);
     const counts = new Array(nLabels).fill(0);
     for (let f = 0; f < labels.length; f++) {

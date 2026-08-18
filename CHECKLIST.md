@@ -3,11 +3,11 @@
 ## Scaffolding Complete
 
 ### Root-Level Files
-- [x] `README.md` — Comprehensive guide (1K+ lines)
+- [x] `README.md` — Comprehensive guide (~390 lines)
 - [x] `QUICKSTART.md` — Quick start for users & developers
 - [x] `ARCHITECTURE.md` — Implementation roadmap & design decisions
 - [x] `package.json` — Project metadata + scripts
-- [x] `server.js` — Dev server with COOP/COEP headers
+- [x] `server.js` — Dev server (optionally sets COOP/COEP; not required)
 - [x] `LICENSE` — GPL-3.0
 - [x] `.gitignore` — Standard Node.js + IDE rules
 - [x] `.github/workflows/deploy.yml` — GitHub Pages auto-deploy
@@ -64,8 +64,6 @@
   - Valid ZIP structure
   - Multi-mesh XML: one object per material + component assembly + Bambu extruder config
   - Hex color display (8-char with alpha)
-  - COOP/COEP header set
-
 - [x] **Download**
   - Client-side blob download
   - Filename: `<name>.3mf` (plus optional `<name>-segmented.glb`)
@@ -111,11 +109,6 @@
   - Shortcuts for quick actions
   - Share target for file drops
 
-- [x] **Headers**
-  - COOP: same-origin
-  - COEP: require-corp
-  - Enables SharedArrayBuffer
-
 - [x] **Installability**
   - Desktop app icon
   - Mobile home screen
@@ -131,7 +124,7 @@
 - [x] JSDoc comments on all public functions
 - [x] Deterministic algorithms (seeded RNG, stable sorting)
 - [x] Error handling (try-catch, validation)
-- [x] ~2000 lines of code total (~20 KB gzipped)
+- [x] ~2,500 lines of app JavaScript (plus HTML/CSS; excludes three.js from CDN)
 
 ### Architecture
 - [x] Single responsibility per module
@@ -181,12 +174,12 @@
 ### Local Development
 - [x] `npm start` → `node server.js`
 - [x] Server listens on http://127.0.0.1:8008
-- [x] COOP/COEP headers set automatically
+- [x] No special HTTP headers required (dev server sets COOP/COEP, but they're optional)
 - [x] Hot reload support (manual refresh)
 - [x] DevTools Network tab shows zero external API calls
 
 ### Manual Testing Checklist
-- [ ] Load vertex-color GLB (Pythia export)
+- [ ] Load vertex-color GLB
   - [ ] Color mode detected as "vertex"
   - [ ] Face count displayed
   - [ ] Clustering produces N distinct colors
@@ -274,7 +267,7 @@ A user, offline, can:
 - [x] Watertight preservation
 - [x] Slicer compatibility (Bambu Studio, PrusaSlicer)
 - [x] Works offline (after initial load)
-- [x] <60 KB bundle size
+- [x] <35 KB gzipped app bundle (excludes three.js from CDN)
 - [x] No build step (pure browser APIs + ES modules)
 
 ### ✅ UX Goals
@@ -285,10 +278,10 @@ A user, offline, can:
 - [x] Privacy & security messaging prominent
 
 ### ✅ Licensing & Documentation
-- [x] GPL-3.0 consistent with ffmpeg-webCLI and whisper-webCLI
+- [x] GPL-3.0, consistent with the webCLI family (ffmpeg-webCLI, whisper-webCLI)
+- [x] Independent, from-scratch implementation (no third-party copyleft code incorporated)
 - [x] Clear README for users and developers
-- [x] Roadmap + implementation guide for future phases
-- [x] Acknowledgments for technique origin (Pythia)
+- [x] Roadmap + implementation guide
 - [x] Links to sibling projects in webCLI family
 
 ---
@@ -296,8 +289,7 @@ A user, offline, can:
 ## File Manifest
 
 ```
-/Users/tejaswigowda/Downloads/3mf-webCLI/
-├── .git/                          [git metadata]
+3mf-webCLI/
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml             ✅ GitHub Pages auto-deploy
@@ -309,7 +301,6 @@ A user, offline, can:
 │   ├── glb-parser.js             ✅ GLB parsing + color extraction + texture sampling
 │   ├── index.html                ✅ Three-panel UI
 │   ├── manifest.json             ✅ PWA manifest
-│   ├── material-assigner.js      ⚠️ Legacy helper (not imported by the active pipeline)
 │   ├── service-worker.js         ✅ Offline caching
 │   ├── style.css                 ✅ Dark theme styles
 │   └── viewer.js                 ✅ three.js viewer + segmented GLB export
@@ -317,26 +308,24 @@ A user, offline, can:
 ├── ARCHITECTURE.md               ✅ Roadmap + design decisions
 ├── LICENSE                       ✅ GPL-3.0
 ├── QUICKSTART.md                 ✅ Quick start guide
-├── README.md                     ✅ Main documentation (~700 lines)
+├── README.md                     ✅ Main documentation (~390 lines)
 ├── package.json                  ✅ Project metadata
-└── server.js                     ✅ Dev server with COOP/COEP (~80 lines)
+└── server.js                     ✅ Dev server (optional COOP/COEP)
 
-TOTAL: ~2000 lines of code
-       ~20 KB gzipped JavaScript
-       ~60 KB uncompressed
-       Zero external dependencies
+TOTAL: ~2,500 lines of app JavaScript (plus HTML/CSS)
+       ~31 KB gzipped / ~115 KB uncompressed (excludes three.js from CDN)
+       One CDN dependency (three.js); no build step
        Pure browser APIs + ES modules
 ```
 
 ---
 
-## Next Steps (After MVP Validation)
+## Next Steps
 
-1. **Test with real users** — Slicer import validation
-2. **Phase 2** — Implement texture UV sampling
-3. **Phase 3** — Add three.js viewer
-4. **Phase 4** — Advanced features (island merge, multi-mesh)
-5. **Community feedback** — Issue tracking, contributions
+1. **Validate on a real reconstructed mesh** — slicer import of a large vertex-colored/textured export (not just the 4-triangle smoke test)
+2. **Material color editor** — color picker / manual reassignment brush
+3. **Boundary re-tessellation** — optional, for crisper color edges
+4. **Community feedback** — issue tracking, contributions
 
 ---
 

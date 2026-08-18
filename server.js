@@ -10,11 +10,10 @@ const PORT = process.env.PORT || 8008;
 const DOCS_DIR = path.join(__dirname, 'docs');
 
 /**
- * Development server with COOP/COEP headers for SharedArrayBuffer support.
- * These headers are required for Web Workers and WebAssembly features.
+ * Development server for the static PWA in docs/.
+ * Sets COOP/COEP for cross-origin isolation; the app works without them too.
  */
 const server = http.createServer((req, res) => {
-  // Set CORS headers for SharedArrayBuffer
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   
@@ -81,5 +80,4 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`\n3mf-webCLI dev server running at http://127.0.0.1:${PORT}`);
   console.log(`Serving from: ${DOCS_DIR}`);
-  console.log(`\nCOOP/COEP headers set for SharedArrayBuffer support.\n`);
 });

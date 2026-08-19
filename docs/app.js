@@ -216,6 +216,10 @@ class App {
       this.state.faceAssignments = result.assignments;
       const finalK = result.centroids.length;
 
+      // Keep the slider in sync with the actual cluster count
+      $('matCount').value = Math.min(8, Math.max(2, finalK));
+      $('matCountVal').textContent = finalK;
+
       // Swatches (clickable - selects the segment in the 3D viewer)
       this._selectedSegment = null;
       this._mergeSource = null;

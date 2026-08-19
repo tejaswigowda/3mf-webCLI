@@ -214,7 +214,12 @@
       <div class="card">
         <div class="card-header">Segmentation</div>
         <div class="card-body">
-          <div class="form-row">
+          <label class="lbl" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="autoDetect" checked
+                   onchange="document.getElementById('matCount').disabled=this.checked">
+            Auto-detect material count (from colors)
+          </label>
+          <div class="form-row" style="margin-top:8px">
             <div class="form-group">
               <label class="lbl">Materials (printer slots) - <span id="matCountVal">4</span></label>
               <input type="range" id="matCount" min="2" max="8" step="1" value="4" disabled
@@ -222,11 +227,6 @@
               <div class="time-val" style="display:flex;justify-content:space-between;color:var(--muted);font-size:.7rem"><span>2</span><span>8</span></div>
             </div>
           </div>
-          <label class="lbl" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px">
-            <input type="checkbox" id="autoDetect" checked
-                   onchange="document.getElementById('matCount').disabled=this.checked">
-            Auto-detect material count (from colors)
-          </label>
 <p class="hint">Pythia-style pipeline: chroma-weighted Lab k-means + edge-aware smoothing + MRF refinement. Auto-detect finds the natural palette size via the inertia elbow - or turn it off to match your printer's slot count (e.g. AMS = 4). You can merge clusters afterwards.</p>
 
           <div class="progress-wrap hidden" id="progWrap">

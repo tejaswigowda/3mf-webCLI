@@ -334,6 +334,27 @@ export default class Viewer {
   }
 
   /**
+   * Nearest basic color name for an RGB triple in 0-1 (matches pythia's palette).
+   * @private
+   */
+  static _colorName(rgb) {
+    const r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+    const palette = [
+      ['black', 20, 20, 20], ['white', 240, 240, 240], ['grey', 128, 128, 128],
+      ['red', 200, 40, 40], ['orange', 230, 130, 40], ['brown', 120, 75, 45],
+      ['rust', 155, 75, 45], ['tan', 205, 175, 135], ['yellow', 220, 200, 50],
+      ['green', 50, 150, 65], ['blue', 50, 80, 185], ['purple', 120, 55, 150],
+      ['pink', 230, 135, 165],
+    ];
+    let best = palette[0], bestD = Infinity;
+    for (const p of palette) {
+      const d = (r - p[1]) ** 2 + (g - p[2]) ** 2 + (b - p[3]) ** 2;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best[0];
+  }
+
+  /**
    * Export the segmented model as a binary GLB (one mesh per cluster).
    * @returns {Promise<ArrayBuffer>}
    */
@@ -384,6 +405,15 @@ export default class Viewer {
       const m = faceAssignments[f];
       facesByCluster[m].push(f);
     }
+
+    // Name each cluster after its nearest color, disambiguating duplicates.
+    const nameCounts = new Map();
+    const clusterName = (m) => {
+      const base = Viewer._colorName(materialColors[m] || [0.5, 0.5, 0.5]);
+      const n = (nameCounts.get(base) || 0) + 1;
+      nameCounts.set(base, n);
+      return n > 1 ? `${base}_${n}` : base;
+    };
 
     for (let m = 0; m < facesByCluster.length; m++) {
       const clusterFaces = facesByCluster[m];
@@ -497,10 +527,11 @@ export default class Viewer {
         roughness: 1,
         metalness: 0,
       });
-      mat.name = `Material_${m + 1}`;
+      const name = clusterName(m);
+      mat.name = name;
 
       const meshObject = new THREE.Mesh(geo, mat);
-      meshObject.name = `Segment_${m + 1}`;
+      meshObject.name = name;
       meshObject.userData.materialIndex = m;
       exportGroup.add(meshObject);
     }

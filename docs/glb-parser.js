@@ -188,20 +188,28 @@ class GLBParser {
           const c0 = this._getColor(vertexColors, a, colorStride);
           const c1 = this._getColor(vertexColors, b, colorStride);
           const c2 = this._getColor(vertexColors, c, colorStride);
+          face.vertexColors = [c0, c1, c2];
           face.color = [
             (c0[0] + c1[0] + c2[0]) / 3,
             (c0[1] + c1[1] + c2[1]) / 3,
             (c0[2] + c1[2] + c2[2]) / 3,
           ];
         } else if (textureData) {
-          // Sample the base color texture at the face's UV centroid
+          // Sample the base color texture at each vertex UV (preserves gradient)
           const { uvs, image, baseColorFactor } = textureData;
-          const u = (uvs[a * 2] + uvs[b * 2] + uvs[c * 2]) / 3;
-          const v = (uvs[a * 2 + 1] + uvs[b * 2 + 1] + uvs[c * 2 + 1]) / 3;
-          const rgb = this._sampleTexture(image, u, v);
-          face.color = baseColorFactor
-            ? [rgb[0] * baseColorFactor[0], rgb[1] * baseColorFactor[1], rgb[2] * baseColorFactor[2]]
-            : rgb;
+          const sample = (vi) => {
+            const rgb = this._sampleTexture(image, uvs[vi * 2], uvs[vi * 2 + 1]);
+            return baseColorFactor
+              ? [rgb[0] * baseColorFactor[0], rgb[1] * baseColorFactor[1], rgb[2] * baseColorFactor[2]]
+              : rgb;
+          };
+          const c0 = sample(a), c1 = sample(b), c2 = sample(c);
+          face.vertexColors = [c0, c1, c2];
+          face.color = [
+            (c0[0] + c1[0] + c2[0]) / 3,
+            (c0[1] + c1[1] + c2[1]) / 3,
+            (c0[2] + c1[2] + c2[2]) / 3,
+          ];
         } else if (materialColor) {
           face.color = materialColor.slice(0, 3);
         } else {

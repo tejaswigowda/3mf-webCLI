@@ -376,8 +376,10 @@ export default class Viewer {
         const cx = (t % gridDim) * cell;
         const cy = Math.floor(t / gridDim) * cell;
 
-        // 3 vertex colors (fall back to cluster color if missing)
-        const vc = [0, 1, 2].map((k) => {
+        // 3 vertex colors: prefer true per-vertex colors (texture/COLOR_0 sampled
+        // at each vertex UV) for max fidelity; else smooth position-averaged.
+        const fvc = face.vertexColors;
+        const vc = fvc || [0, 1, 2].map((k) => {
           const p = idxs[k] * 3;
           return [vertColors[p], vertColors[p + 1], vertColors[p + 2]];
         });

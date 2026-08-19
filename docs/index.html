@@ -109,6 +109,10 @@
     .swatch-row.merge-source { border-color: var(--warn); background: rgba(245,158,11,.08); box-shadow: 0 0 0 1px var(--warn) inset; }
     .swatch-row.merge-source .swatch-merge { border-color: var(--warn); color: var(--warn); }
     #swatches.merging .swatch-row:not(.merge-source):hover { border-color: var(--success); background: rgba(112,219,151,.08); }
+    .swatch-merge { cursor: grab; }
+    .swatch-merge:active { cursor: grabbing; }
+    .swatch-row.drag-source { opacity: 0.5; border-color: var(--warn); }
+    .swatch-row.drop-target { border-color: var(--success); background: rgba(112,219,151,.12); box-shadow: 0 0 0 1px var(--success) inset; }
     .swatch-empty { font-size: 0.8rem; color: var(--muted); padding: 10px 4px; text-align: center; }
 
     /* ── 3D Viewer ── */

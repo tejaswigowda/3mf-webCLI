@@ -75,6 +75,7 @@ class App {
     };
     this._selectedSegment = null;
     this._mergeSource = null;
+    this._dragSource = null;
 
     this._bindUI();
     this._registerServiceWorker();
@@ -303,9 +304,9 @@ class App {
       const hex = rgbToHex(rgb);
       const count = clusterResult.clusters[i]?.length ?? 0;
       const mergeBtn = k > 1
-        ? `<button class="swatch-merge" title="Merge this material into another" onclick="event.stopPropagation(); app.startMerge(${i})"><i class="fa-solid fa-code-merge"></i></button>`
+        ? `<button class="swatch-merge" draggable="true" title="Click, or drag onto another material, to merge" onclick="event.stopPropagation(); app.startMerge(${i})" ondragstart="app.onMergeDragStart(event, ${i})" ondragend="app.onMergeDragEnd(event)"><i class="fa-solid fa-code-merge"></i></button>`
         : '';
-      return `<div class="swatch-row" data-idx="${i}" onclick="app.selectSegment(${i})" title="Click to highlight this segment">
+      return `<div class="swatch-row" data-idx="${i}" onclick="app.selectSegment(${i})" title="Click to highlight this segment" ondragover="app.onMergeDragOver(event, ${i})" ondragleave="app.onMergeDragLeave(event, ${i})" ondrop="app.onMergeDrop(event, ${i})">
         <span class="swatch-idx">${i + 1}</span>
         <span class="swatch-color" style="background:${hex}"></span>
         <span class="swatch-hex">${hex}</span>
@@ -315,6 +316,42 @@ class App {
     }).join('');
     $('matTag').textContent = `${k} cluster${k === 1 ? '' : 's'}`;
     $('matTag').style.display = '';
+  }
+
+  /* ── drag-and-drop merge ── */
+
+  onMergeDragStart(e, idx) {
+    e.stopPropagation();
+    this._dragSource = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+    const row = e.target.closest('.swatch-row');
+    if (row) row.classList.add('drag-source');
+  }
+
+  onMergeDragEnd() {
+    this._dragSource = null;
+    document.querySelectorAll('.swatch-row').forEach((r) => r.classList.remove('drag-source', 'drop-target'));
+  }
+
+  onMergeDragOver(e, idx) {
+    if (this._dragSource === null || this._dragSource === undefined || this._dragSource === idx) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drop-target');
+  }
+
+  onMergeDragLeave(e) {
+    e.currentTarget.classList.remove('drop-target');
+  }
+
+  onMergeDrop(e, idx) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-target');
+    const src = this._dragSource;
+    this._dragSource = null;
+    document.querySelectorAll('.swatch-row').forEach((r) => r.classList.remove('drag-source'));
+    if (src !== null && src !== undefined && src !== idx) this.mergeClusters(src, idx);
   }
 
   /* ── cluster merging ── */

@@ -117,6 +117,9 @@
     .viewer-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 0.85rem; pointer-events: none; }
     .viewer-empty i { font-size: 2.6rem; opacity: 0.4; }
     .viewer-toolbar { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
+    .viewer-overlay { position: absolute; top: 10px; right: 10px; width: 260px; max-height: calc(100% - 20px); overflow-y: auto; background: rgba(21,24,39,0.94); border: 1px solid var(--border); border-radius: 10px; padding: 12px; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.45); backdrop-filter: blur(4px); }
+    .viewer-overlay.hidden { display: none; }
+    .viewer-overlay-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.85rem; margin-bottom: 10px; }
     .view-btn { padding: 4px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; color: var(--muted); cursor: pointer; border: none; background: transparent; transition: background .15s, color .15s; }
     .view-btn:hover { color: var(--text); }
     .view-btn.active { background: var(--accent); color: #fff; }
@@ -239,23 +242,6 @@
           </button>
         </div>
       </div>
-
-      <div class="card">
-        <div class="card-header">Materials <span class="tag" id="matTag" style="display:none">0 clusters</span></div>
-        <div class="card-body">
-          <div id="swatches"><div class="swatch-empty">Segment a model to see its material palette here</div></div>
-          <button class="btn btn-success btn-block" id="downloadBtn" disabled onclick="app.download()" style="margin-top:10px">
-            <i class="fas fa-download"></i> Download 3MF
-          </button>
-          <button class="btn btn-ghost btn-block" id="downloadGlbBtn" disabled onclick="app.downloadGLB()" style="margin-top:6px">
-            <i class="fas fa-cube"></i> Download segmented GLB
-          </button>
-          <div class="out-size" id="outMeta" style="text-align:center;margin-top:8px"></div>
-          <p class="hint" style="margin-top:10px"><i class="fas fa-hand-pointer" style="color:var(--accent-h)"></i> Click a swatch - or a region in the 3D viewer - to highlight that segment.</p>
-          <p class="hint"><i class="fa-solid fa-code-merge" style="color:var(--warn)"></i> Use the merge button on a swatch to combine two materials, then click the target (Esc cancels).</p>
-          <p class="hint"><i class="fas fa-lock" style="color:var(--success)"></i> Import the 3MF into Bambu Studio or PrusaSlicer and map each material to a filament slot. Your file never leaves this device.</p>
-        </div>
-      </div>
     </div>
 
     <!-- ── Right: 3D Viewer ── -->
@@ -267,6 +253,7 @@
             <button class="view-btn active" id="viewOriginal" onclick="app.setView('original')" disabled><i class="fas fa-image"></i> Original</button>
             <button class="view-btn" id="viewSegmented" onclick="app.setView('segmented')" disabled><i class="fas fa-swatchbook"></i> 3MF</button>
             <button class="view-btn" id="viewTextured" onclick="app.setView('textured')" disabled><i class="fas fa-fill-drip"></i> GLB</button>
+            <button class="view-btn" id="toggleMaterials" onclick="app.toggleMaterials()" disabled><i class="fas fa-palette"></i> Materials</button>
           </span>
         </div>
         <div class="viewer-shell" id="viewerShell">
@@ -274,6 +261,23 @@
             <i class="fas fa-cube"></i>
             <span>Load a GLB to preview it here</span>
             <span style="font-size:.72rem">drag to rotate · scroll to zoom · right-drag to pan · click segments to select</span>
+          </div>
+          <div class="viewer-overlay hidden" id="materialsOverlay">
+            <div class="viewer-overlay-header">
+              <span>Materials <span class="tag" id="matTag" style="display:none">0 clusters</span></span>
+              <button class="btn btn-ghost btn-sm" onclick="app.toggleMaterials()"><i class="fas fa-xmark"></i></button>
+            </div>
+            <div id="swatches"><div class="swatch-empty">Segment a model to see its material palette here</div></div>
+            <button class="btn btn-success btn-block" id="downloadBtn" disabled onclick="app.download()" style="margin-top:10px">
+              <i class="fas fa-download"></i> Download 3MF
+            </button>
+            <button class="btn btn-ghost btn-block" id="downloadGlbBtn" disabled onclick="app.downloadGLB()" style="margin-top:6px">
+              <i class="fas fa-cube"></i> Download segmented GLB
+            </button>
+            <div class="out-size" id="outMeta" style="text-align:center;margin-top:8px"></div>
+            <p class="hint" style="margin-top:10px"><i class="fas fa-hand-pointer" style="color:var(--accent-h)"></i> Click a swatch - or a region in the 3D viewer - to highlight that segment.</p>
+            <p class="hint"><i class="fa-solid fa-code-merge" style="color:var(--warn)"></i> Use the merge button on a swatch to combine two materials, then click the target (Esc cancels).</p>
+            <p class="hint"><i class="fas fa-lock" style="color:var(--success)"></i> Import the 3MF into Bambu Studio or PrusaSlicer and map each material to a filament slot. Your file never leaves this device.</p>
           </div>
         </div>
       </div>

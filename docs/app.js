@@ -153,6 +153,7 @@ class App {
       $('viewerEmpty').classList.add('hidden');
       await this.viewer.loadGLB(buffer);
       this._setViewButtons('original', false);
+      this.showMaterials(false);
 
       setStatus(`Loaded ${file.name} - ${faces.length.toLocaleString()} faces (${metadata.colorMode})`, 'loaded');
       addLog(`Parsed ${faces.length.toLocaleString()} faces - color mode: ${metadata.colorMode}`, 'ok');
@@ -179,6 +180,7 @@ class App {
     $('viewerEmpty').classList.remove('hidden');
     this.viewer.clear();
     this._setViewButtons('original', true);
+    this.showMaterials(false);
     setStatus('Drop a GLB file to begin - everything runs locally in your browser');
     addLog('Input cleared');
   }
@@ -225,9 +227,10 @@ class App {
       this._mergeSource = null;
       this._renderSwatches();
 
-      // Segmented 3D preview
+      // Segmented 3D preview - default to the textured (GLB) view
       this.viewer.showSegmentation(positions, faces, this.state.faceAssignments, this.state.materialColors);
-      this._setViewButtons('segmented', false);
+      this._setViewButtons('textured', false);
+      this.showMaterials(true);
 
       setProgress(true, 'Done', 100);
       await nextFrame();
@@ -451,7 +454,20 @@ class App {
     $('viewOriginal').disabled = disableAll;
     $('viewSegmented').disabled = disableAll || !this.state.clusterResult;
     $('viewTextured').disabled = disableAll || !this.state.clusterResult;
+    $('toggleMaterials').disabled = disableAll || !this.state.clusterResult;
     this.setView(mode);
+  }
+
+  /** Show/hide/toggle the Materials overlay inside the viewer. */
+  toggleMaterials(force) {
+    const el = $('materialsOverlay');
+    const show = force === undefined ? el.classList.contains('hidden') : force;
+    el.classList.toggle('hidden', !show);
+    $('toggleMaterials').classList.toggle('active', show);
+  }
+
+  showMaterials(show) {
+    this.toggleMaterials(show);
   }
 
   clearLog() {

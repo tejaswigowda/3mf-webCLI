@@ -230,6 +230,7 @@ export default class Viewer {
 
   /**
    * Export the segmented model as a binary GLB (one mesh per cluster).
+   * Each mesh uses vertex colors based on original face colors.
    * @returns {Promise<ArrayBuffer>}
    */
   async exportSegmentedGLB() {
@@ -242,7 +243,7 @@ export default class Viewer {
     const materialColors = mesh.userData.materialColors;
     const faces = mesh.userData.faces;
 
-    // Build per-cluster indexed meshes with cluster colors
+    // Build per-cluster meshes with original face colors
     const exportGroup = new THREE.Group();
     
     // Group faces by cluster
@@ -257,10 +258,12 @@ export default class Viewer {
       const clusterFaces = facesByCluster[m];
       if (clusterFaces.length === 0) continue;
 
-      // Weld vertices for this cluster
+      // Weld vertices and compute colors from original face colors
       const weld = new Map();
       const remap = new Map();
       const weldedPositions = [];
+      const vertexColorCounts = new Map();
+      const vertexColorSums = new Map();
 
       const weldedIndex = (vi) => {
         let w = remap.get(vi);
@@ -274,6 +277,8 @@ export default class Viewer {
           w = weldedPositions.length / 3;
           weld.set(key, w);
           weldedPositions.push(x, y, z);
+          vertexColorCounts.set(w, 0);
+          vertexColorSums.set(w, [0, 0, 0]);
         }
         remap.set(vi, w);
         return w;
@@ -281,21 +286,45 @@ export default class Viewer {
 
       const indices = [];
 
+      // First pass: collect all welded indices and accumulate colors
       for (const fIdx of clusterFaces) {
-        const [a, b, c] = faces[fIdx].indices;
-        indices.push(weldedIndex(a));
-        indices.push(weldedIndex(b));
-        indices.push(weldedIndex(c));
+        const face = faces[fIdx];
+        const [a, b, c] = face.indices;
+        const faceColor = face.color || materialColors[m] || [0.5, 0.5, 0.5];
+
+        const idxs = [a, b, c];
+        for (let i = 0; i < 3; i++) {
+          const wi = weldedIndex(idxs[i]);
+          indices.push(wi);
+          
+          // Accumulate color for this welded vertex
+          const count = vertexColorCounts.get(wi);
+          const vCol = vertexColorSums.get(wi);
+          vCol[0] += faceColor[0];
+          vCol[1] += faceColor[1];
+          vCol[2] += faceColor[2];
+          vertexColorCounts.set(wi, count + 1);
+        }
+      }
+
+      // Compute averaged vertex colors
+      const vertexColors = new Uint8Array((weldedPositions.length / 3) * 3);
+      for (let w = 0; w < (weldedPositions.length / 3); w++) {
+        const count = vertexColorCounts.get(w) || 1;
+        const vCol = vertexColorSums.get(w) || [0.5, 0.5, 0.5];
+        vertexColors[w * 3] = Math.round((vCol[0] / count) * 255);
+        vertexColors[w * 3 + 1] = Math.round((vCol[1] / count) * 255);
+        vertexColors[w * 3 + 2] = Math.round((vCol[2] / count) * 255);
       }
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(weldedPositions), 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3, true));
       geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
       geo.computeVertexNormals();
 
-      const col = materialColors[m] || [0.5, 0.5, 0.5];
       const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(col[0], col[1], col[2]),
+        vertexColors: true,
         roughness: 0.65,
         metalness: 0.05,
       });

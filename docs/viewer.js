@@ -86,8 +86,7 @@ export default class Viewer {
   }
 
   /**
-   * Build the segmented preview: one flat-shaded mesh PER material cluster,
-   * so segments can be individually picked and exported.
+   * Build the segmented preview with smooth shading.
    * @param {Array<number>} positions - flat [x,y,z,...] vertex array
    * @param {Array} faces - [{indices:[a,b,c]}, ...]
    * @param {Array<number>} faceAssignments - material index per face
@@ -96,56 +95,78 @@ export default class Viewer {
   showSegmentation(positions, faces, faceAssignments, materialColors) {
     this._disposeSegmented();
 
-    // Bucket faces by material index
-    const buckets = materialColors.map(() => []);
+    // Use indexed geometry with SHARED vertices so normals interpolate smoothly
+    const indices = new Uint32Array(faces.length * 3);
     for (let f = 0; f < faces.length; f++) {
-      const m = faceAssignments[f];
-      if (buckets[m]) buckets[m].push(f);
+      const [a, b, c] = faces[f].indices;
+      indices[f * 3] = a;
+      indices[f * 3 + 1] = b;
+      indices[f * 3 + 2] = c;
     }
+
+    // Compute per-vertex colors by averaging cluster colors of adjacent faces
+    const vertexColorCounts = new Map();
+    const vertexColorSums = new Map();
+
+    for (let f = 0; f < faces.length; f++) {
+      const [a, b, c] = faces[f].indices;
+      const m = faceAssignments[f];
+      const col = materialColors[m] || [0.5, 0.5, 0.5];
+
+      for (const v of [a, b, c]) {
+        if (!vertexColorCounts.has(v)) {
+          vertexColorCounts.set(v, 0);
+          vertexColorSums.set(v, [0, 0, 0]);
+        }
+        const count = vertexColorCounts.get(v);
+        const vCol = vertexColorSums.get(v);
+        vCol[0] += col[0];
+        vCol[1] += col[1];
+        vCol[2] += col[2];
+        vertexColorCounts.set(v, count + 1);
+      }
+    }
+
+    // Average the colors
+    const vertexColors = new Uint8Array((positions.length / 3) * 3);
+    for (let v = 0; v < (positions.length / 3); v++) {
+      const count = vertexColorCounts.get(v) || 1;
+      const vCol = vertexColorSums.get(v) || [0.5, 0.5, 0.5];
+      vertexColors[v * 3] = Math.round((vCol[0] / count) * 255);
+      vertexColors[v * 3 + 1] = Math.round((vCol[1] / count) * 255);
+      vertexColors[v * 3 + 2] = Math.round((vCol[2] / count) * 255);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3, true));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.65,
+      metalness: 0.05,
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'SegmentedModel';
+    mesh.userData.faceAssignments = faceAssignments;
+    mesh.userData.materialColors = materialColors;
+    mesh.userData.faces = faces;
+    mesh.userData.positions = positions;
+    mesh.userData.vertexColorCounts = vertexColorCounts;
+    mesh.userData.vertexColorSums = vertexColorSums;
 
     this.segmentedGroup = new THREE.Group();
     this.segmentedGroup.name = 'SegmentedModel';
-
-    for (let m = 0; m < buckets.length; m++) {
-      const bucket = buckets[m];
-      if (bucket.length === 0) continue;
-
-      const verts = new Float32Array(bucket.length * 9);
-      for (let bi = 0; bi < bucket.length; bi++) {
-        const [a, b, c] = faces[bucket[bi]].indices;
-        const idxs = [a, b, c];
-        for (let v = 0; v < 3; v++) {
-          const o = bi * 9 + v * 3;
-          const p = idxs[v] * 3;
-          verts[o] = positions[p] || 0;
-          verts[o + 1] = positions[p + 1] || 0;
-          verts[o + 2] = positions[p + 2] || 0;
-        }
-      }
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-      geo.computeVertexNormals();
-
-      const col = materialColors[m] || [0.5, 0.5, 0.5];
-      const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(col[0], col[1], col[2]),
-        flatShading: true,
-        roughness: 0.65,
-        metalness: 0.05,
-      });
-      mat.name = `Material_${m + 1}`;
-
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.name = `Segment_${m + 1}`;
-      mesh.userData.materialIndex = m;
-      this.segmentedGroup.add(mesh);
-    }
+    this.segmentedGroup.add(mesh);
+    this.segmentedGroup.userData.mesh = mesh;
 
     this.scene.add(this.segmentedGroup);
     this.selectedSegment = null;
     this.setMode('segmented');
-    if (!this.originalGroup) this._frame(this.segmentedGroup);
+    this._frame(this.segmentedGroup);
   }
 
   /**
@@ -153,40 +174,146 @@ export default class Viewer {
    */
   selectSegment(index) {
     this.selectedSegment = index;
-    if (!this.segmentedGroup) return;
-    for (const mesh of this.segmentedGroup.children) {
-      const mat = mesh.material;
-      const isSel = mesh.userData.materialIndex === index;
-      if (index === null) {
-        mat.transparent = false;
-        mat.opacity = 1;
-        mat.emissive.setRGB(0, 0, 0);
-      } else if (isSel) {
-        mat.transparent = false;
-        mat.opacity = 1;
-        mat.emissive.copy(mat.color).multiplyScalar(0.45);
-      } else {
-        mat.transparent = true;
-        mat.opacity = 0.12;
-        mat.emissive.setRGB(0, 0, 0);
+    const mesh = this.segmentedGroup?.userData.mesh;
+    if (!mesh) return;
+
+    const faceAssignments = mesh.userData.faceAssignments;
+    const faces = mesh.userData.faces;
+    const materialColors = mesh.userData.materialColors;
+    const vertexColors = mesh.geometry.attributes.color.array;
+    const vertexColorCounts = mesh.userData.vertexColorCounts;
+    const vertexColorSums = mesh.userData.vertexColorSums;
+
+    if (index === null) {
+      // Restore original colors (average of adjacent faces)
+      for (let v = 0; v < (mesh.userData.positions.length / 3); v++) {
+        const count = vertexColorCounts.get(v) || 1;
+        const vCol = vertexColorSums.get(v) || [0.5, 0.5, 0.5];
+        vertexColors[v * 3] = Math.round((vCol[0] / count) * 255);
+        vertexColors[v * 3 + 1] = Math.round((vCol[1] / count) * 255);
+        vertexColors[v * 3 + 2] = Math.round((vCol[2] / count) * 255);
       }
-      mat.needsUpdate = true;
+    } else {
+      // Dim non-selected, brighten selected
+      const selectedVerts = new Set();
+      for (let f = 0; f < faceAssignments.length; f++) {
+        if (faceAssignments[f] === index) {
+          const [a, b, c] = faces[f].indices;
+          selectedVerts.add(a);
+          selectedVerts.add(b);
+          selectedVerts.add(c);
+        }
+      }
+
+      for (let v = 0; v < (mesh.userData.positions.length / 3); v++) {
+        const count = vertexColorCounts.get(v) || 1;
+        const vCol = vertexColorSums.get(v) || [0.5, 0.5, 0.5];
+        const avgCol = [
+          (vCol[0] / count) * 255,
+          (vCol[1] / count) * 255,
+          (vCol[2] / count) * 255,
+        ];
+
+        if (selectedVerts.has(v)) {
+          vertexColors[v * 3] = Math.round(avgCol[0]);
+          vertexColors[v * 3 + 1] = Math.round(avgCol[1]);
+          vertexColors[v * 3 + 2] = Math.round(avgCol[2]);
+        } else {
+          vertexColors[v * 3] = Math.round(avgCol[0] * 0.12);
+          vertexColors[v * 3 + 1] = Math.round(avgCol[1] * 0.12);
+          vertexColors[v * 3 + 2] = Math.round(avgCol[2] * 0.12);
+        }
+      }
     }
+    mesh.geometry.attributes.color.needsUpdate = true;
   }
 
   /**
-   * Export the segmented model as a binary GLB (one mesh + material per segment).
+   * Export the segmented model as a binary GLB (one mesh per cluster).
    * @returns {Promise<ArrayBuffer>}
    */
   async exportSegmentedGLB() {
     if (!this.segmentedGroup) throw new Error('No segmented model to export');
-    const prevSelection = this.selectedSegment;
-    this.selectSegment(null); // export with clean materials
+    const mesh = this.segmentedGroup.userData.mesh;
+    if (!mesh) throw new Error('No segmented mesh data');
+
+    const allPositions = mesh.userData.positions;
+    const faceAssignments = mesh.userData.faceAssignments;
+    const materialColors = mesh.userData.materialColors;
+    const faces = mesh.userData.faces;
+
+    // Build per-cluster indexed meshes with cluster colors
+    const exportGroup = new THREE.Group();
+    
+    // Group faces by cluster
+    const facesByCluster = Array.from({ length: materialColors.length }, () => []);
+    for (let f = 0; f < faceAssignments.length; f++) {
+      const m = faceAssignments[f];
+      facesByCluster[m].push(f);
+    }
+
+    // Create mesh for each cluster
+    for (let m = 0; m < facesByCluster.length; m++) {
+      const clusterFaces = facesByCluster[m];
+      if (clusterFaces.length === 0) continue;
+
+      // Weld vertices for this cluster
+      const weld = new Map();
+      const remap = new Map();
+      const weldedPositions = [];
+
+      const weldedIndex = (vi) => {
+        let w = remap.get(vi);
+        if (w !== undefined) return w;
+        const x = allPositions[vi * 3] || 0;
+        const y = allPositions[vi * 3 + 1] || 0;
+        const z = allPositions[vi * 3 + 2] || 0;
+        const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
+        w = weld.get(key);
+        if (w === undefined) {
+          w = weldedPositions.length / 3;
+          weld.set(key, w);
+          weldedPositions.push(x, y, z);
+        }
+        remap.set(vi, w);
+        return w;
+      };
+
+      const indices = [];
+
+      for (const fIdx of clusterFaces) {
+        const [a, b, c] = faces[fIdx].indices;
+        indices.push(weldedIndex(a));
+        indices.push(weldedIndex(b));
+        indices.push(weldedIndex(c));
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(weldedPositions), 3));
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+      geo.computeVertexNormals();
+
+      const col = materialColors[m] || [0.5, 0.5, 0.5];
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(col[0], col[1], col[2]),
+        roughness: 0.65,
+        metalness: 0.05,
+      });
+      mat.name = `Material_${m + 1}`;
+
+      const meshObject = new THREE.Mesh(geo, mat);
+      meshObject.name = `Segment_${m + 1}`;
+      exportGroup.add(meshObject);
+    }
+
     try {
       const exporter = new GLTFExporter();
-      return await exporter.parseAsync(this.segmentedGroup, { binary: true });
+      return await exporter.parseAsync(exportGroup, { binary: true });
     } finally {
-      this.selectSegment(prevSelection);
+      exportGroup.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+      });
     }
   }
 
@@ -220,9 +347,10 @@ export default class Viewer {
   _disposeSegmented() {
     if (!this.segmentedGroup) return;
     this.scene.remove(this.segmentedGroup);
-    for (const mesh of this.segmentedGroup.children) {
-      mesh.geometry.dispose();
-      mesh.material.dispose();
+    const mesh = this.segmentedGroup.userData.mesh;
+    if (mesh) {
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) mesh.material.dispose();
     }
     this.segmentedGroup = null;
     this.selectedSegment = null;
@@ -240,12 +368,16 @@ export default class Viewer {
       -((event.clientY - rect.top) / rect.height) * 2 + 1,
     );
     this._raycaster.setFromCamera(ndc, this.camera);
-    const hits = this._raycaster.intersectObjects(this.segmentedGroup.children, false);
+    const mesh = this.segmentedGroup.userData.mesh;
+    if (!mesh) return;
 
+    const hits = this._raycaster.intersectObject(mesh, false);
     let next = null;
     if (hits.length > 0) {
-      const idx = hits[0].object.userData.materialIndex;
-      next = idx === this.selectedSegment ? null : idx; // click again to deselect
+      const faceIndex = hits[0].faceIndex;
+      const faceAssignments = mesh.userData.faceAssignments;
+      const materialIndex = faceAssignments[faceIndex];
+      next = materialIndex === this.selectedSegment ? null : materialIndex; // click again to deselect
     }
     this.selectSegment(next);
     if (this.onSegmentSelect) this.onSegmentSelect(next);

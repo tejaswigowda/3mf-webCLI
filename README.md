@@ -162,7 +162,7 @@ The parser handles all glTF component types, interleaved/strided buffer views, n
 
 ### Segmentation Pipeline
 
-An independent implementation of a perceptual color-segmentation pipeline. Plain k-means on face colors falls apart on real-world models - baked lighting splits one part into light/dark bands and photographic noise produces speckle. The pipeline counters both:
+A reimplementation of Pythia's segmentation approach. Plain k-means on face colors falls apart on real-world models - baked lighting splits one part into light/dark bands and photographic noise produces speckle. The pipeline counters both:
 
 1. **Chroma-weighted Lab** - colors are converted to Lab and the lightness channel is scaled by **0.35**, so hue drives the clustering and baked shading doesn't create brightness bands.
 2. **k-means++ × 3 restarts** - three seeded runs; the one with the lowest inertia wins. Deterministic: same input + same N ⇒ same output.
@@ -334,7 +334,7 @@ No special HTTP headers are required - the app runs from any plain static host.
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0** (GPL-3.0).
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0), matching [Pythia](https://github.com/FoxyNinjaStudios/pythia), whose segmentation approach this tool reimplements.
 
 ### License Summary
 
@@ -356,6 +356,8 @@ With the requirement that you:
 
 ◆ Make source code available when distributing
 
+❉ Offer source to users who interact with it over a network (AGPL network-use clause)
+
 See [LICENSE](LICENSE) for full details.
 
 ---
@@ -364,13 +366,14 @@ See [LICENSE](LICENSE) for full details.
 
 - [**ffmpeg-webCLI**](https://github.com/tejaswigowda/ffmpeg-webCLI) - Browser-based video editor. Video processing pipeline for the webCLI family.
 - [**whisper-webCLI**](https://github.com/tejaswigowda/whisper-webCLI) - Browser-based speech-to-text transcriber. Audio processing pipeline for the webCLI family.
+- [**Pythia**](https://github.com/FoxyNinjaStudios/pythia) - 3D reconstruction + color segmentation + 3MF export (AGPL-3.0). Origin of the segmentation approach this tool reimplements.
 - [**strata-editor**](https://github.com/tejaswigowda/strata-editor) - Browser-based 3D scene editor with deterministic selector language. Future basis for advanced mesh editing in 3mf-webCLI.
 
 ---
 
 ## Acknowledgments
 
-- **Segmentation:** an independent implementation of a chroma-weighted Lab clustering + edge-aware smoothing + MRF refinement pipeline.
+- **Segmentation:** a reimplementation of [Pythia](https://github.com/FoxyNinjaStudios/pythia)'s segmentation approach (chroma-weighted Lab clustering + edge-aware smoothing + MRF refinement). This tool is licensed AGPL-3.0 to match Pythia.
 - **Design inspiration:** [ffmpeg-webCLI](https://github.com/tejaswigowda/ffmpeg-webCLI) and [whisper-webCLI](https://github.com/tejaswigowda/whisper-webCLI) - the coherent webCLI line's pattern and ethos.
 - **3MF Spec:** https://3mf.io/specification/
 - **Feedback & testing:** Community contributions and slicer validation (Bambu Studio, PrusaSlicer).

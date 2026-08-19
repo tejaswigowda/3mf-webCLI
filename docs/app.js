@@ -440,11 +440,13 @@ class App {
     this.viewer.setMode(mode);
     $('viewOriginal').classList.toggle('active', mode === 'original');
     $('viewSegmented').classList.toggle('active', mode === 'segmented');
+    $('viewTextured').classList.toggle('active', mode === 'textured');
   }
 
   _setViewButtons(mode, disableAll) {
     $('viewOriginal').disabled = disableAll;
     $('viewSegmented').disabled = disableAll || !this.state.clusterResult;
+    $('viewTextured').disabled = disableAll || !this.state.clusterResult;
     this.setView(mode);
   }
 

@@ -48,6 +48,7 @@ export default class Viewer {
 
     this.originalGroup = null;    // gltf.scene
     this.segmentedGroup = null;   // one mesh per material cluster
+    this.texturedGroup = null;    // baked per-texel GLB preview (one mesh/cluster)
     this.mode = 'original';
     this.selectedSegment = null;  // material index or null
     this.onSegmentSelect = null;  // callback(index|null)
@@ -334,12 +335,32 @@ export default class Viewer {
 
   /**
    * Export the segmented model as a binary GLB (one mesh per cluster).
-   * Each cluster bakes its original per-face colors into a per-triangle grid
-   * texture atlas (pythia's texture-bake path), so the color map renders in
-   * every viewer including macOS Quick Look / Preview.
    * @returns {Promise<ArrayBuffer>}
    */
   async exportSegmentedGLB() {
+    const exportGroup = this._buildBakedGroup();
+    try {
+      const exporter = new GLTFExporter();
+      return await exporter.parseAsync(exportGroup, { binary: true });
+    } finally {
+      exportGroup.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
+      });
+    }
+  }
+
+  /**
+   * Build the baked segmented model: one mesh per cluster, each with a per-triangle
+   * grid texture atlas sampled from the original texture per texel (pythia-style),
+   * so the color map renders in every viewer including macOS Quick Look / Preview.
+   * @private
+   * @returns {THREE.Group}
+   */
+  _buildBakedGroup() {
     if (!this.segmentedGroup) throw new Error('No segmented model to export');
     const mesh = this.segmentedGroup.userData.mesh;
     if (!mesh) throw new Error('No segmented mesh data');
@@ -406,13 +427,16 @@ export default class Viewer {
 
         // Fill the cell. If the face carries the original texture + UVs, sample it
         // per texel (full detail); otherwise clamped barycentric of the 3 colors.
+        // A 1-texel gutter (m) insets the triangle so bilinear filtering never
+        // samples across cell boundaries (removes atlas seam/raster lines).
         const texImg = face.texImage;
         const fuv = face.uv;
         const bcf = face.baseColorFactor;
-        const D = cell - 1 || 1;
+        const m = 1;
+        const D = (cell - 1 - 2 * m) || 1;
         for (let j = 0; j < cell; j++) {
           for (let i = 0; i < cell; i++) {
-            const bA = i / D, bB = j / D, bC = 1 - bA - bB;
+            const bA = (i - m) / D, bB = (j - m) / D, bC = 1 - bA - bB;
             let r, gg, b;
             if (texImg && fuv) {
               // barycentric -> original UV -> sample source texture
@@ -434,10 +458,10 @@ export default class Viewer {
           }
         }
 
-        // UVs at the 3 cell-corner texel centers (matches v0/v1/v2 mapping)
-        const uv0 = [(cx + 0.5) / texSize, (cy + 0.5) / texSize];
-        const uv1 = [(cx + cell - 0.5) / texSize, (cy + 0.5) / texSize];
-        const uv2 = [(cx + 0.5) / texSize, (cy + cell - 0.5) / texSize];
+        // UVs at the inset (gutter) corner texel centers so bilinear stays in-cell
+        const uv0 = [(cx + m + 0.5) / texSize, (cy + m + 0.5) / texSize];
+        const uv1 = [(cx + cell - 1 - m + 0.5) / texSize, (cy + m + 0.5) / texSize];
+        const uv2 = [(cx + m + 0.5) / texSize, (cy + cell - 1 - m + 0.5) / texSize];
         const cornerUV = [uv0, uv1, uv2];
 
         for (let k = 0; k < 3; k++) {
@@ -477,30 +501,28 @@ export default class Viewer {
 
       const meshObject = new THREE.Mesh(geo, mat);
       meshObject.name = `Segment_${m + 1}`;
+      meshObject.userData.materialIndex = m;
       exportGroup.add(meshObject);
     }
 
-    try {
-      const exporter = new GLTFExporter();
-      return await exporter.parseAsync(exportGroup, { binary: true });
-    } finally {
-      exportGroup.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (obj.material.map) obj.material.map.dispose();
-          obj.material.dispose();
-        }
-      });
-    }
+    return exportGroup;
   }
 
   /**
-   * Toggle between 'original' and 'segmented' display.
+   * Toggle between 'original', 'segmented' (flat 3MF colors) and 'textured'
+   * (baked GLB color map) display.
    */
   setMode(mode) {
+    // Lazily build the textured (GLB) preview the first time it's requested.
+    if (mode === 'textured' && !this.texturedGroup && this.segmentedGroup) {
+      this.texturedGroup = this._buildBakedGroup();
+      this.scene.add(this.texturedGroup);
+      this._frame(this.texturedGroup);
+    }
     this.mode = mode;
     if (this.originalGroup) this.originalGroup.visible = mode === 'original';
     if (this.segmentedGroup) this.segmentedGroup.visible = mode === 'segmented';
+    if (this.texturedGroup) this.texturedGroup.visible = mode === 'textured';
   }
 
   /**
@@ -522,6 +544,7 @@ export default class Viewer {
 
   /** @private */
   _disposeSegmented() {
+    this._disposeTextured();
     if (!this.segmentedGroup) return;
     this.scene.remove(this.segmentedGroup);
     const mesh = this.segmentedGroup.userData.mesh;
@@ -531,6 +554,20 @@ export default class Viewer {
     }
     this.segmentedGroup = null;
     this.selectedSegment = null;
+  }
+
+  /** @private */
+  _disposeTextured() {
+    if (!this.texturedGroup) return;
+    this.scene.remove(this.texturedGroup);
+    this.texturedGroup.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        if (o.material.map) o.material.map.dispose();
+        o.material.dispose();
+      }
+    });
+    this.texturedGroup = null;
   }
 
   /**

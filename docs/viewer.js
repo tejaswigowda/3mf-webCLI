@@ -229,7 +229,94 @@ export default class Viewer {
   }
 
   /**
+   * Smooth per-vertex normals over the whole model: weld vertices by quantized
+   * position, sum area-weighted face normals, normalize. Returns a Float32Array
+   * parallel to `positions` (one normal per original vertex).
+   * @private
+   */
+  _computeSmoothNormals(positions, faces) {
+    const vertCount = positions.length / 3;
+    const weld = new Map();          // quantized key -> welded id
+    const vertKey = new Int32Array(vertCount); // original vertex -> welded id
+    for (let v = 0; v < vertCount; v++) {
+      const x = positions[v * 3] || 0, y = positions[v * 3 + 1] || 0, z = positions[v * 3 + 2] || 0;
+      const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
+      let w = weld.get(key);
+      if (w === undefined) { w = weld.size; weld.set(key, w); }
+      vertKey[v] = w;
+    }
+
+    const weldedNormals = new Float64Array(weld.size * 3);
+    const ab = [0, 0, 0], ac = [0, 0, 0];
+    for (const face of faces) {
+      const [a, b, c] = face.indices;
+      const pa = a * 3, pb = b * 3, pc = c * 3;
+      ab[0] = positions[pb] - positions[pa]; ab[1] = positions[pb + 1] - positions[pa + 1]; ab[2] = positions[pb + 2] - positions[pa + 2];
+      ac[0] = positions[pc] - positions[pa]; ac[1] = positions[pc + 1] - positions[pa + 1]; ac[2] = positions[pc + 2] - positions[pa + 2];
+      // cross(ab, ac) = area-weighted face normal
+      const nx = ab[1] * ac[2] - ab[2] * ac[1];
+      const ny = ab[2] * ac[0] - ab[0] * ac[2];
+      const nz = ab[0] * ac[1] - ab[1] * ac[0];
+      for (const vi of [a, b, c]) {
+        const w = vertKey[vi] * 3;
+        weldedNormals[w] += nx; weldedNormals[w + 1] += ny; weldedNormals[w + 2] += nz;
+      }
+    }
+
+    // Normalize welded normals, then scatter back to per-original-vertex array
+    const out = new Float32Array(vertCount * 3);
+    for (let v = 0; v < vertCount; v++) {
+      const w = vertKey[v] * 3;
+      let nx = weldedNormals[w], ny = weldedNormals[w + 1], nz = weldedNormals[w + 2];
+      const len = Math.hypot(nx, ny, nz) || 1;
+      out[v * 3] = nx / len; out[v * 3 + 1] = ny / len; out[v * 3 + 2] = nz / len;
+    }
+    return out;
+  }
+
+  /**
+   * Smooth per-vertex colors: weld vertices by quantized position and average the
+   * original colors of adjacent faces. Returns a Float32Array (0-1 RGB) parallel
+   * to `positions`, giving a continuous color gradient across the surface.
+   * @private
+   */
+  _computeSmoothVertexColors(positions, faces, faceAssignments, materialColors) {
+    const vertCount = positions.length / 3;
+    const weld = new Map();
+    const vertKey = new Int32Array(vertCount);
+    for (let v = 0; v < vertCount; v++) {
+      const x = positions[v * 3] || 0, y = positions[v * 3 + 1] || 0, z = positions[v * 3 + 2] || 0;
+      const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
+      let w = weld.get(key);
+      if (w === undefined) { w = weld.size; weld.set(key, w); }
+      vertKey[v] = w;
+    }
+
+    const sums = new Float64Array(weld.size * 3);
+    const counts = new Float64Array(weld.size);
+    for (let f = 0; f < faces.length; f++) {
+      const col = faces[f].color || materialColors[faceAssignments[f]] || [0.5, 0.5, 0.5];
+      for (const vi of faces[f].indices) {
+        const w = vertKey[vi];
+        sums[w * 3] += col[0]; sums[w * 3 + 1] += col[1]; sums[w * 3 + 2] += col[2];
+        counts[w] += 1;
+      }
+    }
+
+    const out = new Float32Array(vertCount * 3);
+    for (let v = 0; v < vertCount; v++) {
+      const w = vertKey[v];
+      const n = counts[w] || 1;
+      out[v * 3] = sums[w * 3] / n; out[v * 3 + 1] = sums[w * 3 + 1] / n; out[v * 3 + 2] = sums[w * 3 + 2] / n;
+    }
+    return out;
+  }
+
+  /**
    * Export the segmented model as a binary GLB (one mesh per cluster).
+   * Each cluster bakes its original per-face colors into a per-triangle grid
+   * texture atlas (pythia's texture-bake path), so the color map renders in
+   * every viewer including macOS Quick Look / Preview.
    * @returns {Promise<ArrayBuffer>}
    */
   async exportSegmentedGLB() {
@@ -242,9 +329,14 @@ export default class Viewer {
     const materialColors = mesh.userData.materialColors;
     const faces = mesh.userData.faces;
 
-    // Build per-cluster indexed meshes with cluster colors
     const exportGroup = new THREE.Group();
-    
+
+    // Smooth normals: weld positions across the whole model and average face
+    // normals per welded vertex, so shading interpolates (no faceted/tiled look).
+    const smoothNormals = this._computeSmoothNormals(allPositions, faces);
+    // Smooth per-vertex colors so each triangle bakes a color gradient (not flat).
+    const vertColors = this._computeSmoothVertexColors(allPositions, faces, faceAssignments, materialColors);
+
     // Group faces by cluster
     const facesByCluster = Array.from({ length: materialColors.length }, () => []);
     for (let f = 0; f < faceAssignments.length; f++) {
@@ -252,52 +344,99 @@ export default class Viewer {
       facesByCluster[m].push(f);
     }
 
-    // Create mesh for each cluster
     for (let m = 0; m < facesByCluster.length; m++) {
       const clusterFaces = facesByCluster[m];
       if (clusterFaces.length === 0) continue;
 
-      // Weld vertices for this cluster
-      const weld = new Map();
-      const remap = new Map();
-      const weldedPositions = [];
+      const triCount = clusterFaces.length;
 
-      const weldedIndex = (vi) => {
-        let w = remap.get(vi);
-        if (w !== undefined) return w;
-        const x = allPositions[vi * 3] || 0;
-        const y = allPositions[vi * 3 + 1] || 0;
-        const z = allPositions[vi * 3 + 2] || 0;
-        const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
-        w = weld.get(key);
-        if (w === undefined) {
-          w = weldedPositions.length / 3;
-          weld.set(key, w);
-          weldedPositions.push(x, y, z);
+      // Grid atlas: one cell per triangle. The triangle's 3 verts map to 3 corners
+      // of the cell and the cell is filled with a barycentric gradient of the 3
+      // vertex colors, so the original color gradient is preserved per triangle.
+      const gridDim = Math.ceil(Math.sqrt(triCount));
+      let cell = 8;                                  // texels per cell side
+      if (gridDim * cell > 2048) cell = Math.max(3, Math.floor(2048 / gridDim));
+      const texSize = gridDim * cell;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = texSize;
+      canvas.height = texSize;
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.createImageData(texSize, texSize);
+      const data = imgData.data;
+
+      // Non-indexed geometry: each triangle gets its own 3 vertices + UVs
+      const positions = new Float32Array(triCount * 9);
+      const normals = new Float32Array(triCount * 9);
+      const uvs = new Float32Array(triCount * 6);
+
+      for (let t = 0; t < triCount; t++) {
+        const face = faces[clusterFaces[t]];
+        const idxs = face.indices;
+        const cx = (t % gridDim) * cell;
+        const cy = Math.floor(t / gridDim) * cell;
+
+        // 3 vertex colors (fall back to cluster color if missing)
+        const vc = [0, 1, 2].map((k) => {
+          const p = idxs[k] * 3;
+          return [vertColors[p], vertColors[p + 1], vertColors[p + 2]];
+        });
+
+        // Fill the cell with a clamped barycentric gradient: corner (0,0)=v0,
+        // (C-1,0)=v1, (0,C-1)=v2. Extrapolated texels are clamped (no gaps/bleed).
+        const D = cell - 1 || 1;
+        for (let j = 0; j < cell; j++) {
+          for (let i = 0; i < cell; i++) {
+            const bA = i / D, bB = j / D, bC = 1 - bA - bB;
+            let r = (vc[0][0] * bC + vc[1][0] * bA + vc[2][0] * bB) * 255;
+            let gg = (vc[0][1] * bC + vc[1][1] * bA + vc[2][1] * bB) * 255;
+            let b = (vc[0][2] * bC + vc[1][2] * bA + vc[2][2] * bB) * 255;
+            const o = ((cy + j) * texSize + (cx + i)) * 4;
+            data[o] = r < 0 ? 0 : r > 255 ? 255 : r;
+            data[o + 1] = gg < 0 ? 0 : gg > 255 ? 255 : gg;
+            data[o + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+            data[o + 3] = 255;
+          }
         }
-        remap.set(vi, w);
-        return w;
-      };
 
-      const indices = [];
+        // UVs at the 3 cell-corner texel centers (matches v0/v1/v2 mapping)
+        const uv0 = [(cx + 0.5) / texSize, (cy + 0.5) / texSize];
+        const uv1 = [(cx + cell - 0.5) / texSize, (cy + 0.5) / texSize];
+        const uv2 = [(cx + 0.5) / texSize, (cy + cell - 0.5) / texSize];
+        const cornerUV = [uv0, uv1, uv2];
 
-      for (const fIdx of clusterFaces) {
-        const [a, b, c] = faces[fIdx].indices;
-        indices.push(weldedIndex(a));
-        indices.push(weldedIndex(b));
-        indices.push(weldedIndex(c));
+        for (let k = 0; k < 3; k++) {
+          const p = idxs[k] * 3;
+          const o = t * 9 + k * 3;
+          positions[o] = allPositions[p] || 0;
+          positions[o + 1] = allPositions[p + 1] || 0;
+          positions[o + 2] = allPositions[p + 2] || 0;
+          normals[o] = smoothNormals[p] || 0;
+          normals[o + 1] = smoothNormals[p + 1] || 0;
+          normals[o + 2] = smoothNormals[p + 2] || 0;
+          uvs[t * 6 + k * 2] = cornerUV[k][0];
+          uvs[t * 6 + k * 2 + 1] = cornerUV[k][1];
+        }
       }
 
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(weldedPositions), 3));
-      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-      geo.computeVertexNormals();
+      ctx.putImageData(imgData, 0, 0);
 
-      const col = materialColors[m] || [0.5, 0.5, 0.5];
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      tex.flipY = false;
+
       const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(col[0], col[1], col[2]),
-        roughness: 0.65,
-        metalness: 0.05,
+        map: tex,
+        roughness: 1,
+        metalness: 0,
       });
       mat.name = `Material_${m + 1}`;
 
@@ -312,7 +451,10 @@ export default class Viewer {
     } finally {
       exportGroup.traverse((obj) => {
         if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) obj.material.dispose();
+        if (obj.material) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
       });
     }
   }

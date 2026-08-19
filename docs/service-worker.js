@@ -8,7 +8,7 @@
  * - Enable offline mode for previously cached content
  */
 
-const CACHE_NAME = '3mf-webCLI-v14';
+const CACHE_NAME = '3mf-webCLI-v16';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -72,7 +72,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first strategy for static assets
+  // Network-first for app code (HTML/CSS/JS) so updates load immediately;
+  // falls back to cache when offline. Prevents stale JS during development.
   if (
     request.destination === 'style' ||
     request.destination === 'script' ||
@@ -80,23 +81,19 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('.wasm')
   ) {
     event.respondWith(
-      caches.match(request).then((response) => {
-        return (
-          response ||
-          fetch(request).then((fetchResponse) => {
-            // Cache successful responses
-            if (fetchResponse.ok) {
-              const responseToCache = fetchResponse.clone();
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(request, responseToCache);
-              });
-            }
-            return fetchResponse;
-          })
-        );
+      fetch(request).then((fetchResponse) => {
+        if (fetchResponse.ok) {
+          const responseToCache = fetchResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache);
+          });
+        }
+        return fetchResponse;
       }).catch(() => {
-        // Offline fallback
-        return caches.match(request) || new Response('Offline', { status: 503 });
+        // Offline fallback to cached copy
+        return caches.match(request).then(
+          (r) => r || new Response('Offline', { status: 503 }),
+        );
       }),
     );
   }

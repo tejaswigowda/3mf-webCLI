@@ -205,6 +205,14 @@ class GLBParser {
           };
           const c0 = sample(a), c1 = sample(b), c2 = sample(c);
           face.vertexColors = [c0, c1, c2];
+          // Retain texture + UVs so the exporter can bake per-texel (full detail)
+          face.texImage = image;
+          face.baseColorFactor = baseColorFactor;
+          face.uv = [
+            [uvs[a * 2], uvs[a * 2 + 1]],
+            [uvs[b * 2], uvs[b * 2 + 1]],
+            [uvs[c * 2], uvs[c * 2 + 1]],
+          ];
           face.color = [
             (c0[0] + c1[0] + c2[0]) / 3,
             (c0[1] + c1[1] + c2[1]) / 3,
@@ -249,8 +257,8 @@ class GLBParser {
       const blob = new Blob([bytes], { type: image.mimeType || 'image/png' });
       const bitmap = await createImageBitmap(blob);
 
-      // Downscale very large textures - we only sample face centroids
-      const maxDim = 1024;
+      // Cap very large textures; retained for per-texel bake on export
+      const maxDim = 2048;
       const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
       const w = Math.max(1, Math.round(bitmap.width * scale));
       const h = Math.max(1, Math.round(bitmap.height * scale));

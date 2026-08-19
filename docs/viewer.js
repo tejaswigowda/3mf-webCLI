@@ -313,6 +313,26 @@ export default class Viewer {
   }
 
   /**
+   * Bilinear sample of a decoded image {data(RGBA), width, height} at UV with
+   * repeat wrap. Returns [r,g,b] in 0-255.
+   * @private
+   */
+  static _sampleImage(img, u, v) {
+    const W = img.width, H = img.height, d = img.data;
+    let uu = u - Math.floor(u), vv = v - Math.floor(v);
+    const fx = uu * W - 0.5, fy = vv * H - 0.5;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = fx - x0, ty = fy - y0;
+    const wrap = (n, m) => ((n % m) + m) % m;
+    const x0w = wrap(x0, W), x1w = wrap(x0 + 1, W), y0w = wrap(y0, H), y1w = wrap(y0 + 1, H);
+    const px = (x, y) => { const o = (y * W + x) * 4; return [d[o], d[o + 1], d[o + 2]]; };
+    const c00 = px(x0w, y0w), c10 = px(x1w, y0w), c01 = px(x0w, y1w), c11 = px(x1w, y1w);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    return [0, 1, 2].map((k) =>
+      lerp(lerp(c00[k], c10[k], tx), lerp(c01[k], c11[k], tx), ty));
+  }
+
+  /**
    * Export the segmented model as a binary GLB (one mesh per cluster).
    * Each cluster bakes its original per-face colors into a per-triangle grid
    * texture atlas (pythia's texture-bake path), so the color map renders in
@@ -351,11 +371,11 @@ export default class Viewer {
       const triCount = clusterFaces.length;
 
       // Grid atlas: one cell per triangle. The triangle's 3 verts map to 3 corners
-      // of the cell and the cell is filled with a barycentric gradient of the 3
-      // vertex colors, so the original color gradient is preserved per triangle.
+      // of the cell; the cell is filled by sampling the original texture per texel
+      // (or a barycentric gradient of the 3 vertex colors when no texture).
       const gridDim = Math.ceil(Math.sqrt(triCount));
-      let cell = 8;                                  // texels per cell side
-      if (gridDim * cell > 2048) cell = Math.max(3, Math.floor(2048 / gridDim));
+      let cell = 16;                                 // texels per cell side
+      if (gridDim * cell > 4096) cell = Math.max(4, Math.floor(4096 / gridDim));
       const texSize = gridDim * cell;
 
       const canvas = document.createElement('canvas');
@@ -384,15 +404,28 @@ export default class Viewer {
           return [vertColors[p], vertColors[p + 1], vertColors[p + 2]];
         });
 
-        // Fill the cell with a clamped barycentric gradient: corner (0,0)=v0,
-        // (C-1,0)=v1, (0,C-1)=v2. Extrapolated texels are clamped (no gaps/bleed).
+        // Fill the cell. If the face carries the original texture + UVs, sample it
+        // per texel (full detail); otherwise clamped barycentric of the 3 colors.
+        const texImg = face.texImage;
+        const fuv = face.uv;
+        const bcf = face.baseColorFactor;
         const D = cell - 1 || 1;
         for (let j = 0; j < cell; j++) {
           for (let i = 0; i < cell; i++) {
             const bA = i / D, bB = j / D, bC = 1 - bA - bB;
-            let r = (vc[0][0] * bC + vc[1][0] * bA + vc[2][0] * bB) * 255;
-            let gg = (vc[0][1] * bC + vc[1][1] * bA + vc[2][1] * bB) * 255;
-            let b = (vc[0][2] * bC + vc[1][2] * bA + vc[2][2] * bB) * 255;
+            let r, gg, b;
+            if (texImg && fuv) {
+              // barycentric -> original UV -> sample source texture
+              const su = fuv[0][0] * bC + fuv[1][0] * bA + fuv[2][0] * bB;
+              const sv = fuv[0][1] * bC + fuv[1][1] * bA + fuv[2][1] * bB;
+              const rgb = Viewer._sampleImage(texImg, su, sv);
+              r = rgb[0]; gg = rgb[1]; b = rgb[2];
+              if (bcf) { r *= bcf[0]; gg *= bcf[1]; b *= bcf[2]; }
+            } else {
+              r = (vc[0][0] * bC + vc[1][0] * bA + vc[2][0] * bB) * 255;
+              gg = (vc[0][1] * bC + vc[1][1] * bA + vc[2][1] * bB) * 255;
+              b = (vc[0][2] * bC + vc[1][2] * bA + vc[2][2] * bB) * 255;
+            }
             const o = ((cy + j) * texSize + (cx + i)) * 4;
             data[o] = r < 0 ? 0 : r > 255 ? 255 : r;
             data[o + 1] = gg < 0 ? 0 : gg > 255 ? 255 : gg;

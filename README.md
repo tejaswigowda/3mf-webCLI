@@ -115,12 +115,12 @@ Keep **Auto-detect material count** on (default) to detect the palette size auto
 
 ### 4. Segment
 
-Click **Cluster & Segment**. The material palette appears with a hex color and face count per cluster, and the viewer switches to the segmented preview.
+Click **Cluster & Segment**. The material palette appears with a hex color and face count per cluster, and the viewer switches to the segmented **GLB** color-map preview. Use the **Original / 3MF / GLB** toggle in the viewer toolbar to compare, and the **Materials** button to show/hide the palette overlay.
 
 ### 5. Inspect & Merge
 
 - Click any **swatch** or any **region of the 3D model** to highlight that segment (click again to deselect).
-- Click a swatch's **merge button**, then click the material to fold it into - in the palette or directly in the 3D view. **Esc** cancels.
+- Click a swatch's **merge button**, then click the material to fold it into - in the palette or directly in the 3D view. Or **drag a material's merge handle and drop it onto another material** to merge. **Esc** cancels.
 
 ### 6. Download
 
@@ -154,7 +154,7 @@ Click **Cluster & Segment**. The material palette appears with a hex color and f
 | Mode | Input | Sampling Method |
 |------|-------|-----------------|
 | **Per-vertex (`COLOR_0`)** | RGB or RGBA vertex attribute (float / normalized u8 / u16) | Average of three face vertices |
-| **Textured** | `baseColorTexture` (embedded PNG/JPEG) + `TEXCOORD_0` | Texture decoded in-browser (`createImageBitmap`, downscaled to ≤1024), sampled at the face's UV centroid with repeat wrap, multiplied by `baseColorFactor` |
+| **Textured** | `baseColorTexture` (embedded PNG/JPEG) + `TEXCOORD_0` | Texture decoded in-browser (`createImageBitmap`, ≤ 2048), sampled at each vertex's UV (per-texel for the GLB bake) with repeat wrap, multiplied by `baseColorFactor` |
 | **Material-based** | `pbrMetallicRoughness.baseColorFactor` | Direct per-primitive color |
 | **Monochrome** | Single color or missing data | Graceful degrade to 1-material 3MF |
 
@@ -185,8 +185,9 @@ The detected count is written back to the Materials slider and logged, then the 
 
 ### Interactive Editing
 
-- **Segment selection** - the segmented preview is one three.js mesh per cluster; raycast picking highlights the clicked segment (emissive boost) and fades the rest. Swatch list and viewer stay in sync.
-- **Cluster merging** - any material can be merged into another after segmentation: labels are reassigned and renumbered densely, the target's dominant color is recomputed (median RGB), and palette/viewer/exports all reflect the merge immediately.
+- **Segment selection** - the 3MF preview is a single shared-vertex mesh colored per cluster; raycast picking highlights the clicked segment and fades the rest. Swatch list and viewer stay in sync.
+- **Cluster merging** - any material can be merged into another after segmentation (click-target or drag-and-drop): labels are reassigned and renumbered densely, the target's dominant color is recomputed (median RGB), and palette/viewer/exports all reflect the merge immediately.
+- **GLB color-map preview** - the **GLB** view shows exactly what the exported segmented GLB looks like: each cluster's original colors baked into a per-part texture atlas.
 
 ### 3MF Format
 
@@ -238,7 +239,7 @@ docs/
 
 **`3mf-authorer.js`** - Authors a valid 3MF ZIP/XML: one mesh per material, each as a separate object with `pid="1"` and unique `pindex`, all assembled as components of a root object
 
-**`viewer.js`** - three.js scene: original + segmented previews, raycast segment picking, binary GLB export via `GLTFExporter`
+**`viewer.js`** - three.js scene: original + 3MF + GLB previews, raycast segment picking, and the segmented-GLB bake (per-texel texture atlas per cluster with smooth normals, meshes named by color) exported via `GLTFExporter`
 
 **`app.js`** - Controller; orchestrates the pipeline, renders the material palette, and implements cluster merging
 
@@ -262,7 +263,7 @@ Pure browser APIs + ES modules. No npm packages, no bundler. three.js is loaded 
 
 ### Limitations
 
-1. **Texture sampling is per-face** (UV centroid). Faces spanning multiple texture colors get one representative sample; densely tessellated models are unaffected.
+1. **Segmentation uses one color per face** (sampled at the UV centroid/averaged vertices) for clustering. The segmented **GLB export**, however, bakes the original texture **per-texel** so the exported color map keeps full within-face detail; the **3MF** stays flat per cluster.
 
 2. **No boundary re-tessellation.** Material boundaries follow existing face edges; faces are never split. This preserves watertightness at the cost of boundary precision on coarse meshes. Single-material output is geometry-clean; multi-material output follows existing faces and does not add speckle at cluster boundaries (small stray regions are dissolved by the small-region cleanup pass, which runs before both the 3MF and GLB exports).
 

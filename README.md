@@ -19,21 +19,21 @@ A browser-based GLB-to-3MF converter with **color-based material segmentation** 
 
 ✓ **Four Color Inputs** : Detects and segments whatever the GLB carries:
   - Per-vertex color (`COLOR_0`, VEC3/VEC4, all glTF component types incl. normalized integers)
-  - Textured meshes (`baseColorTexture` sampled at each face's UV centroid)
+  - Textured meshes (`baseColorTexture` sampled per vertex, and per-texel when baking the GLB export)
   - Material base-color factors (untextured, per-primitive colors)
   - Monochrome (graceful degrade to a single material)
 
 ✓ **Perceptual Color Segmentation** : chroma-weighted Lab k-means with multi-restart, edge-aware label smoothing, MRF refinement, and small-region cleanup (see [Segmentation Pipeline](#segmentation-pipeline))
 
-✓ **Interactive 3D Viewer** : three.js preview of the original and segmented model - click a segment (or its swatch) to highlight it in isolation
+✓ **Interactive 3D Viewer** : three.js preview with three modes - **Original**, **3MF** (flat cluster colors), and **GLB** (baked color map) - plus a toggleable in-viewer **Materials** overlay. Click a segment (or its swatch) to highlight it in isolation
 
-✓ **Cluster Merging** : Combine any two materials after segmentation with two clicks - no need to re-run
+✓ **Cluster Merging** : Combine any two materials after segmentation - click the merge button then the target, **or drag one material's merge handle and drop it onto another**. No need to re-run
 
 ✓ **Auto Material Detection** : Finds the natural number of materials straight from the model's colors (no ML - a simple inertia-elbow heuristic). On by default; toggle off for a fixed count
 
 ✓ **User-Selectable Material Count** : Or cluster down to a fixed 2-8 materials to match your printer's slot count (e.g., 4 for Bambu AMS, MMU for Prusa)
 
-✓ **Two Export Formats** : Multi-material **3MF** for slicers, plus a **segmented GLB** (one mesh per material) for further editing
+✓ **Two Export Formats** : Multi-material **3MF** for slicers (flat cluster colors), plus a **segmented GLB** with the original color map **baked per-texel into a texture** (one mesh per material, each named after its color) - renders correctly in every viewer including macOS Quick Look, model-viewer, and Blender
 
 ✓ **Deterministic** : Seeded clustering - same GLB + same N always produces the same result
 
@@ -67,7 +67,7 @@ Your file never leaves your device.
 Drag & drop or select a `.glb` (binary glTF 2.0) file. The app parses every mesh and primitive, then detects which color representation the model carries:
 
 - **Per-vertex color** (`COLOR_0`) - hand-painted vertex color or engine/reconstruction export
-- **Textured** (`baseColorTexture` + UVs) - most DCC / photogrammetry / AI-reconstruction output. The embedded texture is decoded in-browser and sampled at each face's UV centroid.
+- **Textured** (`baseColorTexture` + UVs) - most DCC / photogrammetry / AI-reconstruction output. The embedded texture is decoded in-browser and sampled at each vertex's UV (and per-texel for the GLB color-map bake).
 - **Material-based** (untextured per-primitive `baseColorFactor`)
 
 If the model is monochrome (one color), the app degrades gracefully to a single-material 3MF. The original model appears in the 3D viewer immediately.
@@ -90,7 +90,7 @@ Click **Cluster & Segment**. The app runs the [segmentation pipeline](#segmentat
 ### Step 5: Download
 
 - **Download 3MF** - a valid 3MF package with N materials (hex colors) and per-triangle material assignment; geometry and watertightness preserved.
-- **Download segmented GLB** - a binary glTF with one mesh per material (`Segment_N` / `Material_N`), handy for further editing in Blender etc.
+- **Download segmented GLB** - a binary glTF with one mesh per material, each named after its region's color (e.g. `green`, `rust`). The original color map is baked per-texel into a per-part texture (white base + `baseColorTexture`, smooth normals), so it shows the full gradient in every viewer including macOS Quick Look.
 
 Both are client-side blob downloads. No round-trip.
 

@@ -7,11 +7,12 @@
 - ✅ k-means clustering in Lab color space + auto material detection (inertia elbow)
 - ✅ 3MF authoring (multi-mesh, one object per material + Bambu extruder config)
 - ✅ Client-side blob download (3MF + segmented GLB)
-- ✅ PWA (offline support)
+- ✅ PWA (offline support, network-first for app code)
 - ✅ Matches webCLI line UI/UX
-- ✅ **Textured GLB support** — in-browser decode + per-face UV sampling
-- ✅ **3D viewer** — three.js preview, segment picking
-- ✅ **Cluster merging** — merge materials post-segmentation
+- ✅ **Textured GLB support** — in-browser decode + per-vertex UV sampling (per-texel for the GLB bake)
+- ✅ **3D viewer** — three.js preview with **Original / 3MF / GLB** modes + toggleable in-viewer **Materials** overlay; segment picking
+- ✅ **Segmented GLB export** — original color map baked **per-texel** into a per-part texture atlas, meshes named by color, smooth normals; renders in Quick Look / model-viewer / Blender
+- ✅ **Cluster merging** — click-target or **drag-and-drop** a material onto another
 - ⏳ **Material color editor** — planned (color picker / reassignment brush)
 
 ---
@@ -80,8 +81,9 @@
 
 - [x] **UV → Pixel Sampling**
   - Extract `baseColorTexture` and UV coordinates (TEXCOORD_0)
-  - Decode embedded image via `createImageBitmap` + `OffscreenCanvas` (downscaled to ≤1024)
-  - Sample texture at face centroid UV (repeat wrap), multiply by `baseColorFactor`
+  - Decode embedded image via `createImageBitmap` + `OffscreenCanvas` (capped at 2048)
+  - Sample the texture at each vertex UV (repeat wrap), multiply by `baseColorFactor`
+  - The segmented GLB export samples the texture **per texel** (barycentric → original UV) for a full-detail color map
   - Missing/failed textures fall back gracefully to material/monochrome
 
 - [x] **Texture Image Loading**
@@ -124,13 +126,15 @@ for (const face of faces) {
 ### Tasks
 
 - [x] **3D Viewer** (`viewer.js`, three.js from CDN)
-  - Load and display the GLB in the center panel
-  - Segmented preview: one mesh per cluster with its material color
+  - Load and display the GLB in the viewer panel
+  - **Original** view (input model), **3MF** view (flat cluster colors on a shared-vertex mesh), **GLB** view (baked per-texel color map) — GLB is the default after segmenting
+  - Toggleable in-viewer **Materials** overlay (swatches + downloads)
   - Raycast click-to-select a segment (highlight + fade others)
   - Orbit/zoom/pan controls
 
 - [x] **Cluster Merging** (in lieu of a full editor)
   - Merge any material into another from the swatch list or 3D view
+  - **Drag** a material's merge handle and **drop** it onto another to merge
   - Dense relabel + median-RGB recolor; palette/viewer/exports update live
 
 - [ ] **Material Editor UI** (planned)
@@ -154,7 +158,8 @@ for (const face of faces) {
   - All meshes/primitives in the GLB are processed and merged into one vertex list
 
 - [x] **Segmented GLB Export**
-  - Binary glTF with one mesh per material (via `GLTFExporter`)
+  - Binary glTF with one mesh per material, each **named after its color** (e.g. `green`, `rust`)
+  - The original color map is baked **per-texel** into a per-part grid texture atlas (white base × `baseColorTexture`), with smooth welded normals — shows the full gradient in every viewer including macOS Quick Look
 
 - [ ] **Reconstruction Quality Report** (planned)
   - Detect spikes, thin features, non-manifold edges and warn (do not fix)
@@ -256,6 +261,12 @@ test('end-to-end: load GLB → cluster → download 3MF', async () => {
 - **Faster** — no re-meshing
 - **Trade-off:** Geometry stays as-is; reconstruction artifacts (spikes, thin features) remain visible. This is by design.
 
+### Why a Per-Texel Texture Bake for the Segmented GLB?
+
+- macOS Quick Look / Preview (and USDZ) **ignore per-vertex `COLOR_0`** when a material is present, so a vertex-color GLB looks blank there. A real `baseColorTexture` renders everywhere.
+- Segmentation carries one color per face, but the export samples the **original texture per atlas texel** (barycentric → original UV), so within-face detail (e.g. a thin avocado skin rim) survives — the 3MF stays flat per cluster.
+- Each cluster gets its own grid atlas (one cell per triangle, a 1-texel gutter to avoid seam bleed) with white base × texture and smooth welded normals. This mirrors Pythia's texture-bake path.
+
 ### Why One CDN Dependency (three.js)?
 
 - **App logic stays dependency-free:** parser, clusterer, and authorer are pure browser APIs
@@ -336,7 +347,7 @@ GLB → mesh-webCLI (repair spikes, thin features) → 3mf-webCLI (segment) → 
 
 1. **Keep modules small & focused** — one job per file
 2. **No heavy dependencies** — stick to browser APIs
-3. **Test locally** — `node server.js` then open http://127.0.0.1:8008
+3. **Test locally** — `node server.js` then open http://127.0.0.1:8008 (the service worker is network-first for app code, so a normal reload picks up edits)
 4. **Validate slicer compatibility** — test in Bambu Studio and PrusaSlicer
 5. **Document changes** — update README if user-facing
 6. **Match webCLI line style** — dark theme, CLI UX, privacy-first messaging

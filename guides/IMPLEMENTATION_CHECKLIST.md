@@ -8,7 +8,7 @@
   - [x] `_createModelXmlMultiMesh()` — multi-mesh XML (production namespace + UUIDs)
   - [x] `_createModelSettingsConfig()` — Bambu part→extruder (filament slot) mapping
   - [x] `author()` — face bucketing by material index; emits `Metadata/model_settings.config`
-- [x] `docs/service-worker.js` cache version bumped (currently v14)
+- [x] `docs/service-worker.js` cache version bumped (currently v20) and switched to network-first for app code
 - [x] All JS files syntax-validated with `node --check`
 
 ### Documentation
@@ -39,8 +39,8 @@
 ### User Impact
 - [x] No breaking changes to existing UI
 - [x] No changes to user workflow
-- [x] Segmented GLB export still works (unchanged)
-- [x] Cluster merging still works (unchanged)
+- [x] Segmented GLB export upgraded (per-texel color-map bake; see Aug 19 session below)
+- [x] Cluster merging still works (now also drag-and-drop)
 
 ### Deployment Ready
 - [x] Code quality: ✅ PASS
@@ -77,3 +77,32 @@
 **Implementation completed**: Aug 17, 2026
 **Last verified**: 3MF structure of test-input.3mf (3.4 KB, 4-triangle synthetic) matches the multi-mesh + Bambu config layout — a structural check, not a slicer-import validation on a real reconstructed mesh
 **Recommendation**: Core feature complete; validate slicer import on a real mesh before tagging a release
+
+---
+
+## Session: Aug 19, 2026 — Segmented GLB color map + viewer/UX
+
+### Segmented GLB export (docs/viewer.js)
+- [x] Per-cluster mesh, non-indexed, **per-triangle grid texture atlas** baked from the original texture **per texel** (barycentric → original UV; bilinear `_sampleImage`)
+- [x] Fallback chain: original texture → `face.vertexColors` → smooth position-averaged colors
+- [x] **1-texel gutter** per cell so bilinear filtering never crosses cell boundaries (removed horizontal raster/seam lines)
+- [x] **Smooth normals** (`_computeSmoothNormals`, welded) — no faceted/tiled shading
+- [x] Each mesh/material/node **named after its nearest color** (`_colorName`, 13-color palette; `_2` suffix for dups)
+- [x] White base × `baseColorTexture`, no `COLOR_0` → renders in macOS Quick Look / model-viewer / Blender
+- [x] `_buildBakedGroup()` shared by export and the in-viewer GLB preview
+
+### glb-parser.js
+- [x] Stores `face.vertexColors`, `face.uv`, `face.baseColorFactor`, `face.texImage`; texture decode cap raised to 2048
+
+### Viewer / UI (viewer.js, app.js, index.html)
+- [x] Viewer modes **Original / 3MF / GLB**; GLB (textured color map) is the default after segmenting
+- [x] **Materials** panel moved into a toggleable in-viewer overlay
+- [x] Cluster merge via **drag-and-drop** (drag merge handle → drop on target) in addition to click-target
+- [x] Auto-detect checkbox moved above the slider; slider disabled while auto; slider synced to detected/final count
+- [x] Text selection disabled outside input fields
+- [x] Service worker: **network-first** for app HTML/CSS/JS (offline cache fallback); cache `v20`
+
+### Verified live (Avocado.glb, 682 faces, textured)
+- [x] Per-texel bake reproduces original detail (dark rim, tan halo, shaded pit); no raster lines
+- [x] GLB round-trips via `GLTFLoader`; segments named `rust` / `green`
+- [x] Drag-and-drop merge reduces cluster count; overlay + previews toggle correctly

@@ -30,17 +30,17 @@ Leave **Auto-detect material count** checked (default) and the app picks the nat
 
 Click **⚡ Cluster & Segment** to run the segmentation pipeline (chroma-weighted Lab k-means + edge-aware smoothing + MRF refinement).
 
-The material palette appears with a hex color and face count per cluster, and the 3D viewer switches to the segmented preview.
+The material palette appears with a hex color and face count per cluster, and the 3D viewer switches to the segmented **GLB** color-map preview. Use the **Original / 3MF / GLB** toggle in the viewer toolbar to compare views, and the **Materials** button to show/hide the palette overlay.
 
 ### 5. Inspect & Refine (optional)
 
 - **Click a swatch** or a region in the 3D viewer to highlight that segment in isolation.
-- **Merge materials**: click a swatch's merge button, then click the target material (swatch or 3D region). **Esc** cancels.
+- **Merge materials**: click a swatch's merge button then click the target, **or drag a material's merge handle and drop it onto another**. **Esc** cancels.
 
 ### 6. Download
 
-- **⬇ Download 3MF** → `<name>.3mf` for your slicer
-- **⬇ Download segmented GLB** → `<name>-segmented.glb` (one mesh per material, for further editing)
+- **⬇ Download 3MF** → `<name>.3mf` for your slicer (flat cluster colors)
+- **⬇ Download segmented GLB** → `<name>-segmented.glb` — one mesh per material (named by color), with the original color map baked per-texel into a texture
 
 ### 7. Import into Your Slicer
 
@@ -185,7 +185,7 @@ For each:
 
 ## Known Limitations
 
-1. **Texture sampling is per-face** (UV centroid) — faces spanning multiple texel colors get one representative sample.
+1. **Segmentation uses one color per face** (UV centroid / averaged vertices). The segmented **GLB** export bakes the original texture **per-texel** so its color map keeps full within-face detail; the **3MF** stays flat per cluster.
 2. **Embedded textures only** — external `.gltf` + separate image files are not supported; use `.glb`.
 3. **Uncompressed geometry only** — Draco / meshopt compressed GLBs are rejected with a clear message; re-export without compression.
 4. **No boundary re-tessellation** — material edges follow existing faces (preserves watertightness).

@@ -13,7 +13,7 @@
 - [x] `.github/workflows/deploy.yml` — GitHub Pages auto-deploy
 
 ### PWA Assets (docs/)
-- [x] `index.html` — Three-panel UI (input | viewer | output)
+- [x] `index.html` — Two-column UI (input + segmentation | viewer with Materials overlay)
 - [x] `style.css` — Dark theme, 60+ CSS variables
 - [x] `manifest.json` — PWA manifest + share_target
 - [x] `service-worker.js` — Offline caching + asset interception
@@ -36,16 +36,15 @@
   - Drag-drop input
   - File picker
   - Binary parsing (magic, version, chunks)
-
 - [x] **Detect Color Mode**
   - Per-vertex (COLOR_0)
-  - Textured (baseColorTexture + UVs) — in-browser decode + per-face UV sampling
+  - Textured (baseColorTexture + UVs) — in-browser decode + per-vertex UV sampling (per-texel for the GLB bake)
   - Material-based (pbrMetallicRoughness.baseColorFactor)
   - Monochrome graceful fallback
 
 - [x] **Extract Colors**
-  - Per-vertex: average three face colors
-  - Textured: sample decoded texture at face UV centroid × baseColorFactor
+  - Per-vertex: actual COLOR_0 per vertex (centroid for clustering)
+  - Textured: sample decoded texture at each vertex UV × baseColorFactor (per-texel when baking the GLB)
   - Material: direct per-primitive color
   - Monochrome: default [0.5, 0.5, 0.5]
 
@@ -71,24 +70,25 @@
 
 ### UI/UX
 - [x] **Layout**
-  - Three-panel grid (input | viewer | output)
+  - Two-column grid (input + segmentation | 3D viewer)
+  - Materials palette as a toggleable overlay inside the viewer
   - Responsive (desktop/tablet/mobile)
-  - Dark theme
+  - Dark theme; text selection disabled outside input fields
 
-- [x] **Input Panel**
+- [x] **Input / Segmentation Panel**
   - Drag-drop zone
   - File picker button
   - GLB info display (color mode, face count)
-  - Material count slider (2–8)
+  - Auto-detect checkbox (above) + Materials count slider (disabled while auto)
 
-- [x] **Center Panel**
-  - Viewer placeholder (📦 icon)
+- [x] **Viewer Panel**
+  - Original / 3MF / GLB view toggle + Materials overlay toggle
   - Status messages (info/success/error/warning alerts)
   - Log output
 
-- [x] **Output Panel**
-  - Material swatches (color + hex)
-  - Download button
+- [x] **Materials Overlay (in viewer)**
+  - Material swatches (color + hex + face count)
+  - Download 3MF + Download segmented GLB buttons
   - Privacy/slicer compatibility notices
 
 - [x] **Status Messages**
@@ -230,13 +230,13 @@
 ## Known Limitations (By Design)
 
 ### Implemented Since MVP
-- ✅ Texture sampling (in-browser decode + per-face UV sampling)
-- ✅ 3D viewer (three.js preview + segment picking)
-- ✅ Cluster merging (post-segmentation)
+- ✅ Texture sampling (in-browser decode + per-vertex UV sampling; per-texel bake for GLB)
+- ✅ 3D viewer with **Original / 3MF / GLB** modes + toggleable in-viewer **Materials** overlay + segment picking
+- ✅ Cluster merging (click-target **and drag-and-drop**)
 - ✅ Small-region auto-merge (tiny clusters + small components)
 - ✅ Multi-mesh support (all meshes/primitives processed)
 - ✅ Auto material detection (inertia elbow, no ML)
-- ✅ Segmented GLB export
+- ✅ Segmented GLB export — per-texel color-map texture atlas, meshes named by color, smooth normals (Quick Look / model-viewer / Blender safe)
 
 ### Still Planned
 - ⬜ Material color editor / manual reassignment brush
@@ -299,7 +299,7 @@ A user, offline, can:
 │   ├── color-clusterer.js        ✅ Lab k-means pipeline + auto-detect
 │   ├── download-handler.js       ✅ Blob download
 │   ├── glb-parser.js             ✅ GLB parsing + color extraction + texture sampling
-│   ├── index.html                ✅ Three-panel UI
+│   ├── index.html                ✅ Two-column UI + in-viewer Materials overlay
 │   ├── manifest.json             ✅ PWA manifest
 │   ├── service-worker.js         ✅ Offline caching
 │   ├── style.css                 ✅ Dark theme styles
@@ -334,6 +334,6 @@ TOTAL: ~2,500 lines of app JavaScript (plus HTML/CSS)
 **Project:** 3mf-webCLI  
 **Status:** Feature-complete ✅  
 **Deployment:** Live in production  
-**Last Updated:** 2026-08-17  
+**Last Updated:** 2026-08-19  
 
-All core functionality implemented and documented: four color inputs (vertex / textured / material / monochrome), auto material detection, 3D viewer with segment picking, cluster merging, multi-mesh 3MF with Bambu extruder mapping, and segmented GLB export.
+All core functionality implemented and documented: four color inputs (vertex / textured / material / monochrome), auto material detection, 3D viewer with Original / 3MF / GLB modes + in-viewer Materials overlay and segment picking, cluster merging (click or drag-and-drop), multi-mesh 3MF with Bambu extruder mapping, and a segmented GLB with the original color map baked per-texel (meshes named by color).

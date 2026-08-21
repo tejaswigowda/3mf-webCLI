@@ -8,8 +8,10 @@
 class ThreeMFAuthorer {
   /**
    * Create a 3MF file from geometry and material assignments.
-   * Approach: one mesh per material, each as a separate object,
-   * assembled via components (slicer-compatible).
+   * Approach: ONE watertight mesh (all vertices welded across materials) with
+   * per-triangle material assignment (3MF core `pid`/`p1`). A single shared
+   * vertex pool keeps the mesh manifold - separate per-material objects leave
+   * open boundary edges at cluster cuts that slicers flag as non-manifold.
    * @param {Array} faces - Face data with indices
    * @param {Array} positions - Vertex positions (flat array)
    * @param {Array<Array<number>>} materialColors - RGB colors for each material
@@ -24,30 +26,16 @@ class ThreeMFAuthorer {
       throw new Error('Face assignments length mismatch');
     }
 
-    // Group faces by material
-    const facesByMaterial = Array.from({ length: materialColors.length }, () => []);
-    faceAssignments.forEach((mat, faceIdx) => {
-      facesByMaterial[mat].push(faceIdx);
-    });
+    // Weld all vertices into one pool (watertight), keeping per-face material.
+    const { weldedPositions, weldedFaces } = this._weldAllVertices(faces, positions);
 
-    // Weld vertices per material and collect mesh data
-    const meshes = [];
-    for (let mat = 0; mat < materialColors.length; mat++) {
-      const faceIndices = facesByMaterial[mat];
-      if (faceIndices.length === 0) continue;
+    // Create 3D model XML (single mesh, per-triangle material)
+    const modelXml = this._createModelXmlSingleMesh(
+      weldedPositions, weldedFaces, faceAssignments, materialColors,
+    );
 
-      const meshData = this._weldVerticesForMaterial(faces, positions, faceIndices);
-      meshes.push({
-        materialIndex: mat,
-        ...meshData,
-      });
-    }
-
-    // Create 3D model XML
-    const modelXml = this._createModelXmlMultiMesh(meshes, materialColors);
-
-    // Create Bambu model settings config (maps parts to extruders/filaments)
-    const configXml = this._createModelSettingsConfig(this._lastObjectIds, this._lastRootId);
+    // Create Bambu model settings config (names the object)
+    const configXml = this._createModelSettingsConfig(this._lastObjectId);
 
     // Create relationship XML
     const rlsXml = this._createRelationshipsXml();
@@ -67,13 +55,15 @@ class ThreeMFAuthorer {
   }
 
   /**
-   * Weld vertices for a subset of faces (one material).
+   * Weld all faces into a single vertex pool (quantized position dedupe), so the
+   * mesh is watertight/manifold. Returns welded positions + faces (per original
+   * face order, so faceAssignments stays aligned).
    * @private
-   * @returns {{positions: Array<number>, faces: Array<Array<number>>}}
+   * @returns {{weldedPositions: Array<number>, weldedFaces: Array<Array<number>>}}
    */
-  static _weldVerticesForMaterial(allFaces, allPositions, faceIndices) {
-    const weld = new Map();       // quantized position key -> welded index
-    const remap = new Map();      // original vertex index -> welded index within this material
+  static _weldAllVertices(allFaces, allPositions) {
+    const weld = new Map();
+    const remap = new Map();
     const weldedPositions = [];
 
     const weldedIndex = (vi) => {
@@ -93,23 +83,25 @@ class ThreeMFAuthorer {
       return w;
     };
 
-    const weldedFaces = faceIndices.map((fIdx) => {
-      const [a, b, c] = allFaces[fIdx].indices;
+    const weldedFaces = allFaces.map((f) => {
+      const [a, b, c] = f.indices;
       return [weldedIndex(a), weldedIndex(b), weldedIndex(c)];
     });
 
-    return { positions: weldedPositions, faces: weldedFaces };
+    return { weldedPositions, weldedFaces };
   }
 
   /**
-   * Create 3D model XML with one mesh per material.
-   * One object per material, all referenced as components of a root object.
-   * This approach is slicer-native (Bambu Studio, PrusaSlicer both handle it correctly).
+   * Create 3D model XML as a SINGLE watertight mesh with per-triangle material.
+   * All triangles share one welded vertex pool (manifold); each triangle carries
+   * `pid="1" p1="<materialIndex>"` (3MF core per-triangle material).
    * @private
-   * @param {Array} meshes - [{materialIndex, positions, faces}, ...]
+   * @param {Array<number>} weldedPositions - flat [x,y,z,...]
+   * @param {Array<Array<number>>} weldedFaces - [[a,b,c], ...] (per original face)
+   * @param {Array<number>} faceAssignments - material index per face
    * @param {Array<Array<number>>} materialColors - RGB for each material
    */
-  static _createModelXmlMultiMesh(meshes, materialColors) {
+  static _createModelXmlSingleMesh(weldedPositions, weldedFaces, faceAssignments, materialColors) {
     const parts = [];
     parts.push('<?xml version="1.0" encoding="UTF-8"?>\n');
     parts.push('<model unit="millimeter" xml:lang="en-US" ' +
@@ -117,7 +109,6 @@ class ThreeMFAuthorer {
            'xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" ' +
            'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">\n');
 
-    // Resources section
     parts.push(' <resources>\n');
 
     // Material definitions (one per unique material)
@@ -129,90 +120,61 @@ class ThreeMFAuthorer {
     }
     parts.push('  </m:basematerials>\n');
 
-    // One object per mesh (per material). IDs start at 2.
-    let nextObjectId = 2;
-    const objectIds = [];
+    // Single object: one welded mesh, default material (pid=1, pindex=0)
+    const objId = 2;
+    const objUuid = this._generateUUID();
+    parts.push(`  <object id="${objId}" p:UUID="${objUuid}" type="model" pid="1" pindex="0">\n`);
+    parts.push('   <mesh>\n');
 
-    for (const mesh of meshes) {
-      const objId = nextObjectId++;
-      const materialIndex = mesh.materialIndex;
-      const uuid = this._generateUUID();
-      objectIds.push({ id: objId, uuid });
-
-      // Object with mesh for this material
-      parts.push(`  <object id="${objId}" p:UUID="${uuid}" type="model" pid="1" pindex="${materialIndex}">\n`);
-      parts.push('   <mesh>\n');
-
-      // Vertices (welded for this material)
-      parts.push('    <vertices>\n');
-      for (let i = 0; i < mesh.positions.length; i += 3) {
-        const x = mesh.positions[i].toFixed(6);
-        const y = mesh.positions[i + 1].toFixed(6);
-        const z = mesh.positions[i + 2].toFixed(6);
-        parts.push(`     <vertex x="${x}" y="${y}" z="${z}"/>\n`);
-      }
-      parts.push('    </vertices>\n');
-
-      // Triangles for this material (all triangles in this mesh use the same material)
-      parts.push('    <triangles>\n');
-      for (const [a, b, c] of mesh.faces) {
-        parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}"/>\n`);
-      }
-      parts.push('    </triangles>\n');
-
-      parts.push('   </mesh>\n');
-      parts.push('  </object>\n');
+    parts.push('    <vertices>\n');
+    for (let i = 0; i < weldedPositions.length; i += 3) {
+      const x = weldedPositions[i].toFixed(6);
+      const y = weldedPositions[i + 1].toFixed(6);
+      const z = weldedPositions[i + 2].toFixed(6);
+      parts.push(`     <vertex x="${x}" y="${y}" z="${z}"/>\n`);
     }
+    parts.push('    </vertices>\n');
 
-    // Root assembly object (highest id): assembles all material objects as components
-    const rootId = nextObjectId++;
-    const rootUuid = this._generateUUID();
-    parts.push(`  <object id="${rootId}" p:UUID="${rootUuid}" type="model">\n`);
-    parts.push('   <components>\n');
-    for (const objRef of objectIds) {
-      const uuid = this._generateUUID();
-      parts.push(`    <component objectid="${objRef.id}" p:UUID="${uuid}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n`);
+    // Per-triangle material via pid/p1
+    parts.push('    <triangles>\n');
+    for (let f = 0; f < weldedFaces.length; f++) {
+      const [a, b, c] = weldedFaces[f];
+      const mat = faceAssignments[f] || 0;
+      parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="${mat}"/>\n`);
     }
-    parts.push('   </components>\n');
+    parts.push('    </triangles>\n');
+
+    parts.push('   </mesh>\n');
     parts.push('  </object>\n');
 
     parts.push(' </resources>\n');
 
-    // Build section: reference the root assembly object
+    // Build section: reference the single object
     const buildUuid = this._generateUUID();
     parts.push(' <build>\n');
-    parts.push(`  <item objectid="${rootId}" p:UUID="${buildUuid}" transform="1 0 0 0 1 0 0 0 1 0 0 0" printable="1"/>\n`);
+    parts.push(`  <item objectid="${objId}" p:UUID="${buildUuid}" transform="1 0 0 0 1 0 0 0 1 0 0 0" printable="1"/>\n`);
     parts.push(' </build>\n');
 
     parts.push('</model>\n');
 
-    // Stash object metadata so the caller can build model_settings.config
-    this._lastObjectIds = objectIds.map(o => o.id);
-    this._lastRootId = rootId;
+    // Stash object id for the config
+    this._lastObjectId = objId;
 
     return parts.join('');
   }
 
   /**
-   * Create Bambu-style model_settings.config that maps each material object
-   * (part) to a distinct extruder/filament slot. Without this, Bambu Studio
-   * treats the whole assembly as a single filament.
+   * Create Bambu-style model_settings.config naming the single object. With
+   * per-triangle base materials, slicers map each base material to a filament.
    * @private
    */
-  static _createModelSettingsConfig(objectIds, rootId) {
+  static _createModelSettingsConfig(objectId) {
     const parts = [];
     parts.push('<?xml version="1.0" encoding="UTF-8"?>\n');
     parts.push('<config>\n');
-    parts.push(`  <object id="${rootId}">\n`);
+    parts.push(`  <object id="${objectId}">\n`);
     parts.push('    <metadata key="name" value="segmented"/>\n');
     parts.push('    <metadata key="extruder" value="1"/>\n');
-    objectIds.forEach((objId, i) => {
-      parts.push(`    <part id="${objId}" subtype="normal_part">\n`);
-      parts.push(`      <metadata key="name" value="Color ${i + 1}"/>\n`);
-      parts.push('      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n');
-      parts.push(`      <metadata key="extruder" value="${i + 1}"/>\n`);
-      parts.push('    </part>\n');
-    });
     parts.push('  </object>\n');
     parts.push('</config>\n');
     return parts.join('');

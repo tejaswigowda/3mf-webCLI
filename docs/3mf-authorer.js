@@ -92,6 +92,36 @@ class ThreeMFAuthorer {
   }
 
   /**
+   * Encode a whole-triangle Bambu Studio `paint_color` for painting state `n`
+   * (0 = base filament → no attribute). Mirrors BambuStudio TriangleSelector
+   * serialize(): leaf split bits (00), then 2 bits of n for n<3, else the 0b11
+   * indicator + repeated 1111 per 15 + 4 bits of the remainder; nibbles are
+   * emitted LSB-first and the hex string lists them in reverse.
+   * Verified: 1→"4", 2→"8", 3→"0C", 4→"1C", 7→"4C".
+   * @private
+   */
+  static _bambuPaintColor(n) {
+    if (!n) return null; // state 0 = base filament, no paint_color
+    const bits = [0, 0]; // leaf (number_of_split_sides = 0)
+    if (n < 3) {
+      bits.push(n & 1, (n >> 1) & 1);
+    } else {
+      bits.push(1, 1); // 0b11 extended-state indicator
+      let r = n - 3;
+      while (r >= 15) { bits.push(1, 1, 1, 1); r -= 15; }
+      for (let i = 0; i < 4; i++) bits.push((r >> i) & 1);
+    }
+    while (bits.length % 4 !== 0) bits.push(0);
+    const nibbles = [];
+    for (let k = 0; k < bits.length; k += 4) {
+      let v = 0;
+      for (let i = 0; i < 4; i++) v |= bits[k + i] << i;
+      nibbles.push(v.toString(16).toUpperCase());
+    }
+    return nibbles.reverse().join('');
+  }
+
+  /**
    * Create 3D model XML as a SINGLE watertight mesh with per-triangle material.
    * All triangles share one welded vertex pool (manifold); each triangle carries
    * `pid="1" p1="<materialIndex>"` (3MF core per-triangle material).
@@ -135,12 +165,15 @@ class ThreeMFAuthorer {
     }
     parts.push('    </vertices>\n');
 
-    // Per-triangle material via pid/p1
+    // Per-triangle material: `pid`/`p1` (3MF core, read by PrusaSlicer) plus
+    // Bambu's `paint_color` (read by Bambu Studio → maps each region to a filament).
     parts.push('    <triangles>\n');
     for (let f = 0; f < weldedFaces.length; f++) {
       const [a, b, c] = weldedFaces[f];
       const mat = faceAssignments[f] || 0;
-      parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="${mat}"/>\n`);
+      const paint = this._bambuPaintColor(mat);
+      const paintAttr = paint ? ` paint_color="${paint}"` : '';
+      parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="${mat}"${paintAttr}/>\n`);
     }
     parts.push('    </triangles>\n');
 

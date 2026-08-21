@@ -137,23 +137,27 @@ class ThreeMFAuthorer {
     parts.push('<model unit="millimeter" xml:lang="en-US" ' +
            'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" ' +
            'xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" ' +
-           'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">\n');
+           'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" ' +
+           'xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06">\n');
+
+    // Declare PrusaSlicer multi-material painting data version (matches the
+    // shared Bambu/Prusa bitstream, so PrusaSlicer reads slic3rpe:mmu_segmentation).
+    parts.push(' <metadata name="slic3rpe:MmPaintingVersion">1</metadata>\n');
 
     parts.push(' <resources>\n');
 
-    // Material definitions (one per unique material)
-    parts.push('  <m:basematerials id="1">\n');
-    for (let i = 0; i < materialColors.length; i++) {
-      const [r, g, b] = materialColors[i];
-      const hexColor = this._rgbToHex(r, g, b);
-      parts.push(`   <m:base name="Color ${i + 1}" displaycolor="${hexColor}"/>\n`);
-    }
-    parts.push('  </m:basematerials>\n');
+    // NOTE: We deliberately do NOT emit 3MF core <basematerials>/pid/p1. Bambu
+    // Studio paints multi-material via its own per-triangle `paint_color`
+    // attribute (below). Shipping BOTH systems made Bambu resolve colors
+    // inconsistently - it showed all clusters on load, then collapsed the count
+    // when the object was transformed (e.g. rotated 90deg). paint_color alone
+    // matches Bambu's native multicolor files and keeps the count stable.
 
-    // Single object: one welded mesh, default material (pid=1, pindex=0)
+    // Single object: one welded mesh. Unpainted triangles = base filament (1);
+    // paint_color assigns the rest.
     const objId = 2;
     const objUuid = this._generateUUID();
-    parts.push(`  <object id="${objId}" p:UUID="${objUuid}" type="model" pid="1" pindex="0">\n`);
+    parts.push(`  <object id="${objId}" p:UUID="${objUuid}" type="model">\n`);
     parts.push('   <mesh>\n');
 
     parts.push('    <vertices>\n');
@@ -165,15 +169,22 @@ class ThreeMFAuthorer {
     }
     parts.push('    </vertices>\n');
 
-    // Per-triangle material: `pid`/`p1` (3MF core, read by PrusaSlicer) plus
-    // Bambu's `paint_color` (read by Bambu Studio → maps each region to a filament).
+    // Per-triangle color via Bambu's `paint_color`. Bambu maps paint state N to
+    // filament N (state 0 = base extruder, and state 1 ALSO resolves to
+    // filament 1 because Bambu duplicates the base extruder at color index 0).
+    // So we paint cluster m with state m+1 → distinct filaments 1..N; without
+    // the +1, cluster 0 (base/filament 1) and cluster 1 (state 1 = filament 1)
+    // would collapse into one, showing N-1 materials.
     parts.push('    <triangles>\n');
     for (let f = 0; f < weldedFaces.length; f++) {
       const [a, b, c] = weldedFaces[f];
       const mat = faceAssignments[f] || 0;
-      const paint = this._bambuPaintColor(mat);
-      const paintAttr = paint ? ` paint_color="${paint}"` : '';
-      parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="${mat}"${paintAttr}/>\n`);
+      const paint = this._bambuPaintColor(mat + 1);
+      // paint_color = Bambu Studio; slic3rpe:mmu_segmentation = PrusaSlicer.
+      // Same encoded bitstream (Bambu forked PrusaSlicer, only the attribute
+      // name changed), so both slicers resolve the same per-region filaments.
+      const paintAttr = paint ? ` paint_color="${paint}" slic3rpe:mmu_segmentation="${paint}"` : '';
+      parts.push(`     <triangle v1="${a}" v2="${b}" v3="${c}"${paintAttr}/>\n`);
     }
     parts.push('    </triangles>\n');
 

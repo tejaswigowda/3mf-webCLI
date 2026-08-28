@@ -282,6 +282,13 @@ class App {
       const outName = (fileName || 'model').replace(/\.glb$/i, '') + '.3mf';
       DownloadHandler.download(threeMF, outName, 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml');
 
+      const st = ThreeMFAuthorer._lastStats;
+      if (st) {
+        addLog(`  Mesh: ${st.outputFaces} tris (removed ${st.degenerate} degenerate + ${st.duplicates} duplicate); `
+          + `edges after weld: ${st.openEdges} open, ${st.nonManifoldEdges} non-manifold (>2 tris)`,
+        (st.openEdges || st.nonManifoldEdges) ? 'err' : 'ok');
+      }
+
       $('outMeta').textContent = `${outName} - ${fmtBytes(threeMF.byteLength)}`;
       setStatus(`Downloaded ${outName}`, 'loaded');
       addLog(`Downloaded ${outName} (${fmtBytes(threeMF.byteLength)})`, 'ok');

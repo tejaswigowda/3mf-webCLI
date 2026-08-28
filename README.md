@@ -2,6 +2,8 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/tejaswigowda/3mf-webCLI?style=social)](https://github.com/tejaswigowda/3mf-webCLI/stargazers)
 
+<img src='demo.png'>
+
 A browser-based GLB-to-3MF converter with **color-based material segmentation** for multi-material 3D printing.
 <b><ins>No uploads, no servers - all processing happens locally</ins></b> in your browser. Pure ES modules - no build step, no npm dependencies (three.js loaded from CDN and cached for offline use).
 

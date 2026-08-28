@@ -29,9 +29,15 @@ class ThreeMFAuthorer {
     // Weld all vertices into one pool (watertight), keeping per-face material.
     const { weldedPositions, weldedFaces } = this._weldAllVertices(faces, positions);
 
+    // Clean: drop degenerate + duplicate triangles.
+    const repaired = this._repairManifold(weldedPositions, weldedFaces, faceAssignments);
+    this._lastStats = repaired.stats;
+    // eslint-disable-next-line no-console
+    console.log('[3mf-authorer] mesh stats:', this._lastStats);
+
     // Create 3D model XML (single mesh, per-triangle material)
     const modelXml = this._createModelXmlSingleMesh(
-      weldedPositions, weldedFaces, faceAssignments, materialColors,
+      repaired.positions, repaired.faces, repaired.assignments, materialColors,
     );
 
     // Create Bambu model settings config (names the object)
@@ -55,32 +61,35 @@ class ThreeMFAuthorer {
   }
 
   /**
-   * Weld all faces into a single vertex pool (quantized position dedupe), so the
-   * mesh is watertight/manifold. Returns welded positions + faces (per original
-   * face order, so faceAssignments stays aligned).
+   * Weld all faces into one vertex pool by quantized position (1e-5 mm). This
+   * maximises shared edges so a slicer's neighbour-finding treats coincident
+   * seam vertices as one - minimising the "open/non-manifold edge" count, which
+   * a slicer computes from vertex-index adjacency.
    * @private
    * @returns {{weldedPositions: Array<number>, weldedFaces: Array<Array<number>>}}
    */
   static _weldAllVertices(allFaces, allPositions) {
-    const weld = new Map();
-    const remap = new Map();
+    const numVerts = Math.floor(allPositions.length / 3);
     const weldedPositions = [];
+    const remap = new Int32Array(numVerts).fill(-1);
+    const posMap = new Map();
 
     const weldedIndex = (vi) => {
-      let w = remap.get(vi);
-      if (w !== undefined) return w;
+      if (remap[vi] >= 0) return remap[vi];
       const x = allPositions[vi * 3] || 0;
       const y = allPositions[vi * 3 + 1] || 0;
       const z = allPositions[vi * 3 + 2] || 0;
-      const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
-      w = weld.get(key);
-      if (w === undefined) {
-        w = weldedPositions.length / 3;
-        weld.set(key, w);
+      // 1e-4 mm snapping: merges float-imprecise coincident seam vertices so a
+      // slicer sees them as one (fewer open edges), still far below real edges.
+      const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+      let out = posMap.get(key);
+      if (out === undefined) {
+        out = weldedPositions.length / 3;
+        posMap.set(key, out);
         weldedPositions.push(x, y, z);
       }
-      remap.set(vi, w);
-      return w;
+      remap[vi] = out;
+      return out;
     };
 
     const weldedFaces = allFaces.map((f) => {
@@ -89,6 +98,61 @@ class ThreeMFAuthorer {
     });
 
     return { weldedPositions, weldedFaces };
+  }
+
+  /**
+   * Clean a welded mesh for slicing: drop degenerate triangles (a repeated
+   * vertex) and exact duplicate triangles (doubled shells). Does NOT split or
+   * detach faces - a slicer counts BOTH open edges and >2-triangle edges as
+   * "non-manifold", so detaching faces only trades one for the other and makes
+   * the count worse. Reports open (1-triangle) and >2-triangle edge counts.
+   * @private
+   * @returns {{positions: Array<number>, faces: Array<Array<number>>, assignments: Array<number>, stats: object}}
+   */
+  static _repairManifold(positions, faces, assignments) {
+    const ek = (u, v) => (u < v ? `${u}_${v}` : `${v}_${u}`);
+
+    const edgeCount = new Map();
+    const seenTri = new Set();
+    const outFaces = [];
+    const outAssign = [];
+    let degenerate = 0;
+    let duplicates = 0;
+
+    for (let fi = 0; fi < faces.length; fi++) {
+      const [a, b, c] = faces[fi];
+      if (a === b || b === c || a === c) { degenerate++; continue; }
+      const triKey = [a, b, c].slice().sort((x, y) => x - y).join('_');
+      if (seenTri.has(triKey)) { duplicates++; continue; }
+      seenTri.add(triKey);
+      for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+        const k = ek(u, v);
+        edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+      }
+      outFaces.push(faces[fi]);
+      outAssign.push(assignments[fi] || 0);
+    }
+
+    let openEdges = 0;
+    let nonManifoldEdges = 0;
+    for (const n of edgeCount.values()) {
+      if (n === 1) openEdges++;
+      else if (n > 2) nonManifoldEdges++;
+    }
+
+    return {
+      positions,
+      faces: outFaces,
+      assignments: outAssign,
+      stats: {
+        inputFaces: faces.length,
+        outputFaces: outFaces.length,
+        degenerate,
+        duplicates,
+        openEdges,
+        nonManifoldEdges,
+      },
+    };
   }
 
   /**

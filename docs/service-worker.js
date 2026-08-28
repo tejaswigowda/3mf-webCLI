@@ -8,7 +8,7 @@
  * - Enable offline mode for previously cached content
  */
 
-const CACHE_NAME = '3mf-webCLI-v25';
+const CACHE_NAME = '3mf-webCLI-v30';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

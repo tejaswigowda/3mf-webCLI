@@ -9,7 +9,15 @@ A browser-based GLB-to-3MF converter with **color-based material segmentation** 
 
 ▶ **Live app:** https://tejaswigowda.com/3mf-webCLI/
 
-> Third member of the **webCLI** family, alongside [**ffmpeg-webCLI**](https://github.com/tejaswigowda/ffmpeg-webCLI) (video) and [**whisper-webCLI**](https://github.com/tejaswigowda/whisper-webCLI) (audio). Same philosophy: sovereign, offline-first, client-side. Your file never leaves your machine.
+## Paper
+
+This tool is a reference implementation of the **Web-CLI** architecture, described in:
+
+> **The Web-CLI: Verifiable Privacy for Tools, Models, and Inference Engines in the Browser**
+> Tejaswi Gowda, Arizona State University.
+> arXiv: https://arxiv.org/abs/2608.28950
+
+The paper defines the four properties (fidelity, progressive disclosure, offline-first, zero egress), presents four reference implementations, and argues that for sensitive data, client-side should be the default architecture — because it makes privacy a *verifiable* technical property rather than a policy promise.
 
 ---
 
@@ -365,10 +373,20 @@ See [LICENSE](LICENSE) for full details.
 
 ---
 
+## Part of the Web-CLI family
+
+A family of zero-egress browser tools — your data never leaves your device, verifiable in DevTools. All free, open source, and installable as offline PWAs.
+
+- **[ffmpeg-webCLI](https://github.com/tejaswigowda/ffmpeg-webCLI)** — full FFmpeg in the browser: trim, convert, compress, caption, and 30+ video operations. ([live](https://tejaswigowda.com/ffmpeg-webCLI/))
+- **[whisper-webCLI](https://github.com/tejaswigowda/whisper-webCLI)** — speech-to-text with Whisper (Transformers.js), ~99 languages, on-device. ([live](https://tejaswigowda.com/whisper-webCLI/))
+- **[chat-webCLI](https://github.com/tejaswigowda/chat-webCLI)** — local LLM chat via WebLLM/WebGPU; prompts never leave the device. ([live](https://tejaswigowda.com/chat-webCLI/))
+
+Architecture paper: [arXiv:2608.28950](https://arxiv.org/abs/2608.28950)
+
+---
+
 ## Related Projects
 
-- [**ffmpeg-webCLI**](https://github.com/tejaswigowda/ffmpeg-webCLI) - Browser-based video editor. Video processing pipeline for the webCLI family.
-- [**whisper-webCLI**](https://github.com/tejaswigowda/whisper-webCLI) - Browser-based speech-to-text transcriber. Audio processing pipeline for the webCLI family.
 - [**Pythia**](https://github.com/FoxyNinjaStudios/pythia) - 3D reconstruction + color segmentation + 3MF export (AGPL-3.0). Origin of the segmentation approach this tool reimplements.
 - [**strata-editor**](https://github.com/tejaswigowda/strata-editor) - Browser-based 3D scene editor with deterministic selector language. Future basis for advanced mesh editing in 3mf-webCLI.
 

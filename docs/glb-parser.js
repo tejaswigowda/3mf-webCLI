@@ -81,11 +81,55 @@ class GLBParser {
       throw new Error('No meshes found in GLB');
     }
 
-    // Gather primitives from ALL meshes
-    const primitives = meshes.flatMap((m) => m.primitives || []);
+    const scenes = json.scenes || [];
+    const nodes = json.nodes || [];
+    const defaultScene = scenes[json.scene ?? 0];
+    if (!defaultScene) {
+      throw new Error('No default scene found in GLB');
+    }
+
+    // A mesh's accessors contain object-local coordinates. Traverse the active
+    // scene so node translation, rotation, scale, and instancing are retained.
+    const primitives = [];
+    const visitNode = (nodeIndex, parentMatrix, ancestors = new Set()) => {
+      const node = nodes[nodeIndex];
+      if (!node) {
+        console.warn(`Node ${nodeIndex} not found`);
+        return;
+      }
+      if (ancestors.has(nodeIndex)) {
+        throw new Error(`Cycle detected in GLB scene at node ${nodeIndex}`);
+      }
+
+      const localMatrix = this._nodeMatrix(node);
+      const worldMatrix = this._multiplyMat4(parentMatrix, localMatrix);
+      if (node.mesh !== undefined) {
+        const mesh = meshes[node.mesh];
+        if (mesh) {
+          for (const primitive of mesh.primitives || []) {
+            primitives.push({
+              primitive,
+              worldMatrix,
+              flipWinding: this._mat4Determinant(worldMatrix) < 0,
+            });
+          }
+        } else {
+          console.warn(`Mesh ${node.mesh} referenced by node ${nodeIndex} not found`);
+        }
+      }
+
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(nodeIndex);
+      for (const childIndex of node.children || []) {
+        visitNode(childIndex, worldMatrix, nextAncestors);
+      }
+    };
+    for (const rootIndex of defaultScene.nodes || []) {
+      visitNode(rootIndex, this._identityMat4());
+    }
 
     if (primitives.length === 0) {
-      throw new Error('No primitives found in mesh');
+      throw new Error('No mesh primitives found in the default scene');
     }
 
     // Collect all faces and their colors
@@ -98,7 +142,7 @@ class GLBParser {
     let sawVertex = false;
     let sawMaterial = false;
 
-    for (const prim of primitives) {
+    for (const { primitive: prim, worldMatrix, flipWinding } of primitives) {
       // Only triangle primitives (mode 4 is the default when omitted)
       if (prim.mode !== undefined && prim.mode !== 4) {
         console.warn(`Skipping primitive with non-triangle mode ${prim.mode}`);
@@ -111,11 +155,12 @@ class GLBParser {
         continue;
       }
 
-      const positions = this._getAccessorData(prim.attributes.POSITION, accessors, bufferViews, bin);
-      if (!positions || positions.length === 0) {
+      const localPositions = this._getAccessorData(prim.attributes.POSITION, accessors, bufferViews, bin);
+      if (!localPositions || localPositions.length === 0) {
         console.warn('Skipping primitive with no positions');
         continue;
       }
+      const positions = this._transformPositions(localPositions, worldMatrix);
 
       // Indexed or non-indexed geometry
       let indices = this._getAccessorData(prim.indices, accessors, bufferViews, bin);
@@ -127,6 +172,7 @@ class GLBParser {
           console.warn('Skipping primitive with no triangles');
           continue;
         }
+
       }
 
       // Offset face indices so all primitives share one vertex list
@@ -176,7 +222,9 @@ class GLBParser {
 
       // Extract faces
       for (let i = 0; i < indices.length; i += 3) {
-        const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+        const a = indices[i];
+        const b = flipWinding ? indices[i + 2] : indices[i + 1];
+        const c = flipWinding ? indices[i + 1] : indices[i + 2];
         const face = {
           indices: [a + vertexOffset, b + vertexOffset, c + vertexOffset],
           color: null,
@@ -239,6 +287,86 @@ class GLBParser {
                           : 'monochrome';
 
     return { faces, metadata, positions: allPositions, bin };
+  }
+
+  /**
+   * Return a glTF node's local 4x4 transform, in column-major order.
+   * @private
+   */
+  static _nodeMatrix(node) {
+    if (node.matrix) {
+      if (node.matrix.length !== 16) throw new Error('GLB node matrix must contain 16 values');
+      return node.matrix.map(Number);
+    }
+
+    const t = node.translation || [0, 0, 0];
+    const s = node.scale || [1, 1, 1];
+    const q = node.rotation || [0, 0, 0, 1];
+    const [x, y, z, w] = q;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2;
+    const yy = y * y2, yz = y * z2, zz = z * z2;
+    const wx = w * x2, wy = w * y2, wz = w * z2;
+
+    return [
+      (1 - (yy + zz)) * s[0], (xy + wz) * s[0], (xz - wy) * s[0], 0,
+      (xy - wz) * s[1], (1 - (xx + zz)) * s[1], (yz + wx) * s[1], 0,
+      (xz + wy) * s[2], (yz - wx) * s[2], (1 - (xx + yy)) * s[2], 0,
+      t[0], t[1], t[2], 1,
+    ];
+  }
+
+  static _identityMat4() {
+    return [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ];
+  }
+
+  /**
+   * Multiply column-major 4x4 matrices.
+   * @private
+   */
+  static _multiplyMat4(a, b) {
+    const out = new Array(16);
+    for (let column = 0; column < 4; column++) {
+      for (let row = 0; row < 4; row++) {
+        out[column * 4 + row] =
+          a[row] * b[column * 4] +
+          a[4 + row] * b[column * 4 + 1] +
+          a[8 + row] * b[column * 4 + 2] +
+          a[12 + row] * b[column * 4 + 3];
+      }
+    }
+    return out;
+  }
+
+  static _mat4Determinant(m) {
+    const a00 = m[0], a01 = m[4], a02 = m[8];
+    const a10 = m[1], a11 = m[5], a12 = m[9];
+    const a20 = m[2], a21 = m[6], a22 = m[10];
+    return (
+      a00 * (a11 * a22 - a12 * a21) -
+      a01 * (a10 * a22 - a12 * a20) +
+      a02 * (a10 * a21 - a11 * a20)
+    );
+  }
+
+  /**
+   * Bake a node's world transform into a flattened POSITION array.
+   * @private
+   */
+  static _transformPositions(positions, matrix) {
+    const transformed = new Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      transformed[i] = matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12];
+      transformed[i + 1] = matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13];
+      transformed[i + 2] = matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14];
+    }
+    return transformed;
   }
 
   /**

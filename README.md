@@ -25,7 +25,7 @@ The paper defines the four properties (fidelity, progressive disclosure, offline
 
 ✓ **No Server Uploads** : All 3D processing happens entirely on your device
 
-✓ **Works on Any GLB** : Designed for any source - Blender, Meshy, Tripo, Sketchfab, photogrammetry, or anywhere
+✓ **GLB Scene-Graph Support** : Designed for files from Blender, Meshy, Tripo, Sketchfab, photogrammetry, and similar tools. The active scene is traversed so mesh instances, node translations, rotations, scales, and nested hierarchy are preserved
 
 ✓ **Four Color Inputs** : Detects and segments whatever the GLB carries:
   - Per-vertex color (`COLOR_0`, VEC3/VEC4, all glTF component types incl. normalized integers)
@@ -72,9 +72,13 @@ Your file never leaves your device.
 
 ## How It Works
 
+![3mf webCLI processing pipeline](docs/assets/segmentation-pipeline.svg)
+
 ### Step 1: Load GLB
 
-Drag & drop or select a `.glb` (binary glTF 2.0) file. The app parses every mesh and primitive, then detects which color representation the model carries:
+Drag & drop or select a `.glb` (binary glTF 2.0) file. The app traverses the active glTF scene, including nested nodes and repeated mesh instances, and bakes each node's world transform into the extracted geometry. This keeps parts in the same positions, orientation, and scale as the original viewer. It then detects which color representation the model carries:
+
+![GLB scene graph transform flow](docs/assets/scene-graph.svg)
 
 - **Per-vertex color** (`COLOR_0`) - hand-painted vertex color or engine/reconstruction export
 - **Textured** (`baseColorTexture` + UVs) - most DCC / photogrammetry / AI-reconstruction output. The embedded texture is decoded in-browser and sampled at each vertex's UV (and per-texel for the GLB color-map bake).
@@ -168,7 +172,7 @@ Click **Cluster & Segment**. The material palette appears with a hex color and f
 | **Material-based** | `pbrMetallicRoughness.baseColorFactor` | Direct per-primitive color |
 | **Monochrome** | Single color or missing data | Graceful degrade to 1-material 3MF |
 
-The parser handles all glTF component types, interleaved/strided buffer views, non-indexed primitives, and multiple meshes/primitives per file.
+The parser handles all glTF component types, interleaved/strided buffer views, non-indexed primitives, multiple meshes/primitives, repeated mesh instances, and the active scene's nested node transforms. Mirrored transforms are handled without reversing triangle winding.
 
 ### Segmentation Pipeline
 
@@ -205,23 +209,23 @@ Output is a ZIP file containing:
 
 ```
 3mf-file.3mf
-├── 3D/3dmodel.model                # XML: geometry + basematerials + component assembly
-├── Metadata/model_settings.config  # Bambu part→extruder (filament slot) mapping
+├── 3D/3dmodel.model                # XML: welded geometry + per-triangle paint assignments
+├── Metadata/model_settings.config  # Bambu object metadata
 ├── _rels/.rels                     # Package relationships
 └── [Content_Types].xml             # Content type declarations
 ```
 
-**Material Assignment:** multi-mesh approach: one `<object>` per material, each with `pid="1"` and unique `pindex` (0..N-1). All material objects are assembled as `<components>` of a root object (highest id), which is referenced in the `<build>` section. The model tag declares the production namespace (`xmlns:p`) and every object/component/build item carries a `p:UUID`. This structure is **natively supported** by modern slicers (Bambu Studio, PrusaSlicer) without per-triangle ambiguity.
+**Material Assignment:** a single welded mesh uses per-triangle `paint_color` data for Bambu Studio and `slic3rpe:mmu_segmentation` for PrusaSlicer. Keeping one shared vertex pool avoids open seams between material regions, while the paint state identifies each triangle's filament/material.
 
-**Filament mapping:** `Metadata/model_settings.config` lists each material mesh as a `part` bound to a distinct `extruder` (1..N). Without this file Bambu Studio treats the whole assembly as a single filament — it is what makes each color land in its own AMS slot on import.
+**Object metadata:** `Metadata/model_settings.config` names the exported object and assigns its base extruder setting.
 
-**Watertightness:** Preserved because faces stay intact; only geometry bucketing changes.
+**Mesh cleanup:** Coincident vertices are welded, degenerate triangles and exact duplicate triangles are removed, and the log reports any remaining open or non-manifold edges from the source geometry.
 
 ### Slicer Compatibility
 
 **Tested & Working:**
-- ✓ **Bambu Studio** - Each material mesh imports as a separate part pre-bound to its own filament slot (via `model_settings.config`); adjust the filament colors/types to taste
-- ✓ **PrusaSlicer** - Imports the multi-object assembly; materials resolve to nozzle/slot config
+- ✓ **Bambu Studio** - Per-triangle paint regions import on a single mesh; assign the loaded filament colors/types to each material
+- ✓ **PrusaSlicer** - Per-triangle multi-material segmentation imports as slicer paint regions
 
 **Known Quirks:**
 - Filament *type* is not set (only the slot mapping); pick the actual filament for each slot in the slicer.
@@ -243,11 +247,11 @@ docs/
 └── service-worker.js   PWA caching for offline support
 ```
 
-**`glb-parser.js`** - Parses the GLB container and every mesh/primitive; extracts positions, faces, and per-face colors (vertex color, texture samples, or material factors)
+**`glb-parser.js`** - Traverses the active GLB scene and bakes node transforms into mesh instances; extracts positions, faces, and per-face colors (vertex color, texture samples, or material factors)
 
 **`color-clusterer.js`** - `segmentFaces()`: chroma-weighted Lab k-means (×3 restarts) + face-adjacency smoothing + MRF refinement + small-region cleanup. `autoDetectK()`: inertia-elbow auto material count. Seeded and deterministic
 
-**`3mf-authorer.js`** - Authors a valid 3MF ZIP/XML: one mesh per material, each as a separate object with `pid="1"` and unique `pindex`, all assembled as components of a root object
+**`3mf-authorer.js`** - Authors a 3MF ZIP/XML with one welded mesh and per-triangle paint data for multi-material slicer import
 
 **`viewer.js`** - three.js scene: original + 3MF + GLB previews, raycast segment picking, and the segmented-GLB bake (per-texel texture atlas per cluster with smooth normals, meshes named by color) exported via `GLTFExporter`
 
@@ -277,7 +281,7 @@ Pure browser APIs + ES modules. No npm packages, no bundler. three.js is loaded 
 
 2. **No boundary re-tessellation.** Material boundaries follow existing face edges; faces are never split. This preserves watertightness at the cost of boundary precision on coarse meshes. Single-material output is geometry-clean; multi-material output follows existing faces and does not add speckle at cluster boundaries (small stray regions are dissolved by the small-region cleanup pass, which runs before both the 3MF and GLB exports).
 
-3. **Reconstruction artifacts:** If the input GLB has roughness (spikes, thin features), those stay visible after segmentation. This is by design - the tool surfaces input quality; it does not repair mesh.
+3. **Reconstruction artifacts:** If the input GLB has roughness (spikes, thin features), those stay visible after segmentation. The exporter only performs conservative mesh cleanup; it does not reconstruct or repair major source defects.
 
 4. **Embedded textures only.** `.glb` with textures in the binary chunk is supported; external `.gltf` + separate image files are not.
 

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">3mf webCLI processing pipeline</title>
+  <desc id="desc">A GLB is parsed into world-space geometry, segmented by color and adjacency, previewed, then exported as 3MF and GLB.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64d3eb"/>
+    </marker>
+  </defs>
+  <rect width="960" height="420" rx="18" fill="#0b1020"/>
+  <g font-family="system-ui, sans-serif" text-anchor="middle">
+    <rect x="40" y="48" width="155" height="110" rx="14" fill="#18233f" stroke="#64d3eb" stroke-width="2"/>
+    <text x="118" y="83" fill="#e8eefc" font-size="19" font-weight="700">GLB input</text>
+    <text x="118" y="112" fill="#9fb1cf" font-size="15">geometry</text>
+    <text x="118" y="134" fill="#9fb1cf" font-size="15">materials / texture</text>
+
+    <rect x="265" y="48" width="180" height="110" rx="14" fill="#18233f" stroke="#64d3eb" stroke-width="2"/>
+    <text x="355" y="83" fill="#e8eefc" font-size="19" font-weight="700">Scene parser</text>
+    <text x="355" y="112" fill="#9fb1cf" font-size="15">node transforms</text>
+    <text x="355" y="134" fill="#9fb1cf" font-size="15">instances + colors</text>
+
+    <rect x="515" y="48" width="180" height="110" rx="14" fill="#2b2343" stroke="#c79aff" stroke-width="2"/>
+    <text x="605" y="83" fill="#f3eaff" font-size="19" font-weight="700">Segmentation</text>
+    <text x="605" y="112" fill="#cbb7df" font-size="15">Lab k-means</text>
+    <text x="605" y="134" fill="#cbb7df" font-size="15">smoothing + MRF</text>
+
+    <rect x="765" y="48" width="155" height="110" rx="14" fill="#18352f" stroke="#55d7a5" stroke-width="2"/>
+    <text x="842" y="83" fill="#e8fff6" font-size="19" font-weight="700">Preview</text>
+    <text x="842" y="112" fill="#b6dacd" font-size="15">inspect regions</text>
+    <text x="842" y="134" fill="#b6dacd" font-size="15">merge materials</text>
+
+    <path d="M195 103 H260" stroke="#64d3eb" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M445 103 H510" stroke="#64d3eb" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M695 103 H760" stroke="#64d3eb" stroke-width="3" marker-end="url(#arrow)"/>
+
+    <path d="M842 158 V232" stroke="#64d3eb" stroke-width="3" marker-end="url(#arrow)"/>
+    <rect x="535" y="238" width="385" height="125" rx="14" fill="#142c2a" stroke="#55d7a5" stroke-width="2"/>
+    <text x="727" y="273" fill="#e8fff6" font-size="19" font-weight="700">Local exports</text>
+    <text x="727" y="305" fill="#b6dacd" font-size="15">3MF: welded mesh + per-triangle paint</text>
+    <text x="727" y="329" fill="#b6dacd" font-size="15">GLB: one mesh per material + baked color map</text>
+
+    <text x="355" y="287" fill="#ffca75" font-size="17" font-weight="600">100% local</text>
+    <text x="355" y="315" fill="#a9b6cc" font-size="15">No model upload</text>
+    <text x="355" y="337" fill="#a9b6cc" font-size="15">No server processing</text>
+    <text x="355" y="380" fill="#788aa8" font-size="14">All exports are generated as browser blobs.</text>
+  </g>
+</svg>

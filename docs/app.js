@@ -10,6 +10,7 @@ import ColorClusterer from './color-clusterer.js';
 import ThreeMFAuthorer from './3mf-authorer.js';
 import DownloadHandler from './download-handler.js';
 import Viewer from './viewer.js';
+import { parseRunParams, fetchInput, makeArtifact } from './webcli.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -115,9 +116,10 @@ class App {
 
   /* ── input ── */
 
-  async _handleFile(file) {
+  async _handleFile(file, throwOnError = false) {
     if (!/\.glb$/i.test(file.name)) {
       addLog(`"${file.name}" is not a .glb file`, 'err');
+      if (throwOnError) throw new Error('Input is not a .glb file');
       return;
     }
 
@@ -136,10 +138,14 @@ class App {
 
       // Show file details
       $('inputWrap').classList.remove('hidden');
-      $('fileProps').innerHTML =
-        `<strong>File:</strong> ${file.name}<br>` +
-        `<strong>Faces:</strong> ${faces.length.toLocaleString()}<br>` +
-        `<strong>Color mode:</strong> ${metadata.colorMode}`;
+      const props = $('fileProps');
+      props.replaceChildren();
+      for (const [label, value] of [['File:', file.name], ['Faces:', faces.length.toLocaleString()], ['Color mode:', metadata.colorMode]]) {
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        if (props.childNodes.length) props.appendChild(document.createElement('br'));
+        props.append(strong, ` ${value}`);
+      }
       $('inputMeta').textContent = fmtBytes(file.size);
 
       $('segmentBtn').disabled = false;
@@ -162,6 +168,7 @@ class App {
       setStatus(`Failed to load ${file.name}`, '');
       addLog(`Parse error: ${err.message}`, 'err');
       console.error(err);
+      if (throwOnError) throw err;
     }
   }
 
@@ -188,8 +195,11 @@ class App {
 
   /* ── segmentation ── */
 
-  async segment() {
-    if (!this.state.glbData) return;
+  async segment(throwOnError = false) {
+    if (!this.state.glbData) {
+      if (throwOnError) throw new Error('No GLB model loaded');
+      return;
+    }
 
     const { faces, positions } = this.state.glbData;
     const auto = $('autoDetect')?.checked;
@@ -247,6 +257,7 @@ class App {
       setStatus('Segmentation failed', '');
       addLog(`Clustering error: ${err.message}`, 'err');
       console.error(err);
+      if (throwOnError) throw err;
     } finally {
       $('segmentBtn').disabled = !this.state.glbData;
     }
@@ -254,9 +265,12 @@ class App {
 
   /* ── output ── */
 
-  async download() {
+  async download({ save = true, throwOnError = false } = {}) {
     const { glbData, materialColors, faceAssignments, fileName } = this.state;
-    if (!glbData || !faceAssignments) return;
+    if (!glbData || !faceAssignments) {
+      if (throwOnError) throw new Error('No segmented model to export');
+      return;
+    }
 
     setStatus('Authoring 3MF…', 'loading');
     addLog('Building 3MF (ZIP + 3D/3dmodel.model XML)…');
@@ -280,7 +294,7 @@ class App {
       );
 
       const outName = (fileName || 'model').replace(/\.glb$/i, '') + '.3mf';
-      DownloadHandler.download(threeMF, outName, 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml');
+      if (save) DownloadHandler.download(threeMF, outName, 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml');
 
       const st = ThreeMFAuthorer._lastStats;
       if (st) {
@@ -290,12 +304,14 @@ class App {
       }
 
       $('outMeta').textContent = `${outName} - ${fmtBytes(threeMF.byteLength)}`;
-      setStatus(`Downloaded ${outName}`, 'loaded');
-      addLog(`Downloaded ${outName} (${fmtBytes(threeMF.byteLength)})`, 'ok');
+      setStatus(`${save ? 'Downloaded' : 'Created'} ${outName}`, 'loaded');
+      addLog(`${save ? 'Downloaded' : 'Created'} ${outName} (${fmtBytes(threeMF.byteLength)})`, 'ok');
+      return { buffer: threeMF, name: outName };
     } catch (err) {
       setStatus('3MF authoring failed', '');
       addLog(`3MF error: ${err.message}`, 'err');
       console.error(err);
+      if (throwOnError) throw err;
     }
   }
 
@@ -520,3 +536,38 @@ class App {
 }
 
 window.app = new App();
+document.body.dataset.webcliStatus = 'idle';
+window.__webcli_result = null;
+
+async function runFromUrl() {
+  let params;
+  try {
+    params = parseRunParams(location.search, location.hash);
+    if (!params) return;
+    document.body.dataset.webcliStatus = 'loading';
+    const input = await fetchInput(params.src, location.href);
+    if (params.materials !== null) {
+      $('autoDetect').checked = false;
+      $('matCount').disabled = false;
+      $('matCount').value = params.materials;
+      $('matCountVal').textContent = params.materials;
+    }
+    await window.app._handleFile(new File([input.buffer], input.name), true);
+    document.body.dataset.webcliStatus = 'running';
+    await window.app.segment(true);
+    const output = await window.app.download({ save: params.download, throwOnError: true });
+    window.__webcli_result = {
+      ok: true, op: 'convert', artifact: makeArtifact(output.buffer, output.name), error: null,
+      meta: { tool: '3mf', materials: window.app.state.materialColors.length },
+    };
+    document.body.dataset.webcliStatus = 'done';
+  } catch (err) {
+    const message = err.message || String(err);
+    setStatus(`URL run failed: ${message}`);
+    addLog(`URL run failed: ${message}`, 'err');
+    window.__webcli_result = { ok: false, op: params?.run || 'convert', artifact: null, error: message, meta: { tool: '3mf' } };
+    document.body.dataset.webcliStatus = 'error';
+  }
+}
+
+runFromUrl();

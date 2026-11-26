@@ -16,6 +16,7 @@ const DOCS_DIR = path.join(__dirname, 'docs');
 const server = http.createServer((req, res) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  req.url = req.url.split('?')[0];
   
   // Support service worker scope
   if (req.url === '/' || req.url === '') {

@@ -112,6 +112,28 @@ Both are client-side blob downloads. No round-trip.
 
 ## Usage
 
+### URL-driven conversion
+
+Open `#&src=<encoded GLB URL>&run=convert` to load, segment, and export a
+model without clicking. The same parameters work in the query string;
+fragment values take precedence. `src` may be a relative or CORS-enabled
+HTTP(S) URL, a `data:` URL, or a same-session `blob:` URL. URL inputs are
+fetched by GET without credentials: hosting the input elsewhere necessarily
+contacts that host. Encode parameter values with `encodeURIComponent`.
+
+The default detects the material count automatically. Add `&materials=4`
+to select a fixed count from 2 through 8, and `&download=1` to also start
+a browser download. Without `download=1`, the artifact is available only
+through the result handle and the normal download button.
+
+The body attribute `data-webcli-status` moves through `loading`, `running`,
+and `done` or `error` (`idle` when no run is requested).
+`window.__webcli_result` is `null` until completion, then contains
+`{ ok, op: 'convert', artifact, error, meta }`. On success, `artifact`
+contains `name`, `mime`, `size`, and a lazily generated `dataUrl` for the
+3MF bytes. On failure, `artifact` is `null` and `error` describes the problem.
+Parameters are read on page load; reload after changing the fragment.
+
 ### 1. Open the App
 
 Visit https://tejaswigowda.com/3mf-webCLI/ in a modern browser (Chrome, Edge, Firefox, Safari).

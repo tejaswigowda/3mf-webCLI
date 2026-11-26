@@ -8,11 +8,12 @@
  * - Enable offline mode for previously cached content
  */
 
-const CACHE_NAME = '3mf-webCLI-v30';
+const CACHE_NAME = '3mf-webCLI-v31';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './app.js',
+  './webcli.js',
   './viewer.js',
   './glb-parser.js',
   './color-clusterer.js',
@@ -91,7 +92,7 @@ self.addEventListener('fetch', (event) => {
         return fetchResponse;
       }).catch(() => {
         // Offline fallback to cached copy
-        return caches.match(request).then(
+        return caches.match(request, { ignoreSearch: request.destination === 'document' }).then(
           (r) => r || new Response('Offline', { status: 503 }),
         );
       }),
